@@ -948,7 +948,7 @@ func ipaProgressValue(from text: String) -> Double? {
     return nil
 }
 
-func downloadErrorMessage(from log: String) -> String {
+func downloadErrorMessage(from log: String, platform: String) -> String {
     let lines = log
         .replacingOccurrences(of: "\r", with: "\n")
         .split(separator: "\n")
@@ -989,7 +989,11 @@ func downloadErrorMessage(from log: String) -> String {
         || text.contains("付费应用未购买") {
         return String(localized: "此 Apple 账户暂时无法获取该 App。请确认账号已拥有此 App 后再试。")
     }
-    if text.localizedCaseInsensitiveContains("AppleTVOS") {
+    let normalizedPlatform = platform.lowercased()
+    let isAppleTVDownload = normalizedPlatform == "appletv"
+        || normalizedPlatform.contains("appletvos")
+        || normalizedPlatform.contains("tvos")
+    if isAppleTVDownload && text.localizedCaseInsensitiveContains("AppleTVOS") {
         return String(localized: "Apple 返回的不是 tvOS 安装包。")
     }
     if text.contains("文件签名失败")
@@ -1390,6 +1394,7 @@ final class DownloadManager: ObservableObject {
     struct Job: Identifiable {
         let id: String
         var label: String
+        let platform: String
         var status: JobStatus = .running
         var log: String = ""
         var progress: Double? = 0
@@ -1420,11 +1425,11 @@ final class DownloadManager: ObservableObject {
         let runtime: (projectURL: URL, mainURL: URL, nodeURL: URL)
         do { runtime = try NodeRuntime.locate() }
         catch {
-            jobs[id] = Job(id: id, label: label, status: .failed, log: error.localizedDescription + "\n", progress: nil)
+            jobs[id] = Job(id: id, label: label, platform: config.platform, status: .failed, log: error.localizedDescription + "\n", progress: nil)
             return
         }
 
-        jobs[id] = Job(id: id, label: label, log: String(localized: "任务已开始。") + "\n")
+        jobs[id] = Job(id: id, label: label, platform: config.platform, log: String(localized: "任务已开始。") + "\n")
 
         let task = Process()
         task.executableURL = runtime.nodeURL
@@ -1474,7 +1479,7 @@ final class DownloadManager: ObservableObject {
         do { try task.run(); processes[id] = task }
         catch {
             cleanup(id: id)
-            var j = jobs[id] ?? Job(id: id, label: label)
+            var j = jobs[id] ?? Job(id: id, label: label, platform: config.platform)
             j.status = .failed; j.progress = nil
             j.log += String(localized: "无法启动内置 Node：\(error.localizedDescription)") + "\n"
             jobs[id] = j
@@ -3003,6 +3008,7 @@ struct ContentView: View {
                                             isPackaging: downloads.job(jobID)?.isPackaging ?? false,
                                             hasError: downloads.job(jobID)?.status == .failed,
                                             errorLog: downloads.job(jobID)?.log ?? "",
+                                            downloadPlatform: downloads.job(jobID)?.platform ?? selectedSearchPlatform.rawValue,
                                             downloadedURL: downloadedURL,
                                             appIcon: downloadedURL.flatMap { versionIcons[$0.path] },
                                             allowsAirDrop: !activeAppIsAppleTV,
@@ -3231,7 +3237,10 @@ struct ContentView: View {
     }
 
     private var manualErrorMessage: String {
-        downloadErrorMessage(from: manualDownloadJob?.log ?? "")
+        downloadErrorMessage(
+            from: manualDownloadJob?.log ?? "",
+            platform: manualDownloadJob?.platform ?? selectedSearchPlatform.rawValue
+        )
     }
 
     private var panelGlassTint: Color {
@@ -3569,6 +3578,7 @@ struct ContentView: View {
                                     isPackaging: downloads.job(jobID)?.isPackaging ?? false,
                                     hasError: downloads.job(jobID)?.status == .failed,
                                     errorLog: downloads.job(jobID)?.log ?? "",
+                                    downloadPlatform: downloads.job(jobID)?.platform ?? selectedSearchPlatform.rawValue,
                                     downloadedURL: downloadedURL,
                                     appIcon: downloadedURL.flatMap { versionIcons[$0.path] },
                                     allowsAirDrop: !activeAppIsAppleTV,
@@ -5291,7 +5301,7 @@ struct ContentView: View {
         if activeAppIsAppleTV {
             let latestVersionID = (obj["latestVersionId"] as? String)?
                 .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-            visibleIDs = latestVersionID.isEmpty ? Array(ids.prefix(1)) : [latestVersionID]
+            visibleIDs = latestVersionID.isEmpty ? [] : [latestVersionID]
         } else {
             visibleIDs = Array(ids.reversed())
         }
@@ -6796,6 +6806,7 @@ struct VersionSelectionRow: View {
     let isPackaging: Bool
     let hasError: Bool
     let errorLog: String
+    let downloadPlatform: String
     let downloadedURL: URL?
     let appIcon: NSImage?
     let allowsAirDrop: Bool
@@ -6979,7 +6990,7 @@ struct VersionSelectionRow: View {
     }
 
     private var errorMessage: String {
-        downloadErrorMessage(from: errorLog)
+        downloadErrorMessage(from: errorLog, platform: downloadPlatform)
     }
 }
 
