@@ -8322,6 +8322,23 @@ struct AboutSettingsView: View {
                                 url: "https://github.com/EEliberto/IPA-Download")
             }
 
+            SettingsGroupBox("IDAPastel（独立 tv 分支）") {
+                Text("IDAPastel 是独立 fork/branch；Pastel 原作者并未官方发布或支持此版本。")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 18)
+                    .padding(.vertical, 10)
+
+                SettingsGroupDivider()
+                SettingsLinkRow(title: "majd/ipatool",
+                                subtitle: "tvOS 下载方法参考（MIT 许可）",
+                                url: "https://github.com/majd/ipatool")
+                SettingsGroupDivider()
+                SettingsLinkRow(title: "PR #478",
+                                subtitle: "tvOS 下载方法参考",
+                                url: "https://github.com/majd/ipatool/pull/478")
+            }
+
             SettingsGroupBox(String(localized: "开源项目")) {
                 SettingsLinkRow(title: "ipatool.ts",
                                 subtitle: String(localized: "下载与购买逻辑参考"),
