@@ -5435,15 +5435,20 @@ struct ContentView: View {
         let filenameInfo = filenameVersionAndVariant(from: stem)
 
         let metadataInfo = downloadedMetadata(fromIPA: path)
+        let mainInfoPlistData = mainAppInfoPlistData(fromIPA: path)
         guard let data = metadataInfo.data,
               let plist = try? PropertyListSerialization.propertyList(from: data, options: [], format: nil) as? [String: Any]
         else {
             let name = filenameInfo.name.isEmpty ? stem : filenameInfo.name
+            let packagePlatform = DownloadedPackagePlatform.canonicalPlatform(
+                metadataValue: "",
+                mainInfoPlistData: mainInfoPlistData
+            )
             return DownloadedItem(id: path, fileURL: url, appName: name, developer: "", bundleId: "",
                                   appId: "", groupKey: name, version: filenameInfo.version, versionId: "", sizeBytes: size,
                                   appleAccount: "", storefrontId: "", downloadDate: date,
                                   removesAppStoreUpdates: filenameInfo.variant.removesAppStoreUpdates,
-                                  artworkUrl: "", softwarePlatform: "")
+                                  artworkUrl: "", softwarePlatform: packagePlatform)
         }
 
         func str(_ key: String) -> String {
@@ -5457,6 +5462,10 @@ struct ContentView: View {
         let bundleId = str("softwareVersionBundleId")
         let groupKey = !itemId.isEmpty ? itemId : (!bundleId.isEmpty ? bundleId : appName)
         let version = !str("bundleShortVersionString").isEmpty ? str("bundleShortVersionString") : filenameInfo.version
+        let softwarePlatform = DownloadedPackagePlatform.canonicalPlatform(
+            metadataValue: str("software-platform"),
+            mainInfoPlistData: mainInfoPlistData
+        )
 
         return DownloadedItem(
             id: path,
@@ -5474,7 +5483,7 @@ struct ContentView: View {
             downloadDate: date,
             removesAppStoreUpdates: metadataInfo.removesAppStoreUpdates || filenameInfo.variant.removesAppStoreUpdates,
             artworkUrl: str("softwareIcon57x57URL"),
-            softwarePlatform: str("software-platform")
+            softwarePlatform: softwarePlatform
         )
     }
 
@@ -5611,6 +5620,25 @@ struct ContentView: View {
             return (data, true)
         }
         return (nil, false)
+    }
+
+    private static func mainAppInfoPlistData(fromIPA path: String) -> Data? {
+        guard isFileMaterialized(at: path),
+              let listData = runUnzip(["-Z1", path]),
+              let list = String(data: listData, encoding: .utf8)
+        else {
+            return nil
+        }
+        let candidates = list.split(separator: "\n").map(String.init).filter { entry in
+            entry.range(
+                of: #"^Payload/[^/]+\.app/Info\.plist$"#,
+                options: [.regularExpression, .caseInsensitive]
+            ) != nil
+        }
+        guard let infoPath = candidates.sorted(by: { $0.count < $1.count }).first else {
+            return nil
+        }
+        return runUnzip(["-p", path, infoPath])
     }
 
     private static func extractAppIcon(fromIPA path: String) -> NSImage? {

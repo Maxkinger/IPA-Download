@@ -21,16 +21,24 @@ function systemGuid() {
     }
 }
 
+export function resolveDeviceSupportDirectory({
+    platform = process.platform,
+    home = os.homedir(),
+    env = process.env,
+} = {}) {
+    if (env.IPA_DEVICE_DIR) return env.IPA_DEVICE_DIR;
+    if (env.IPA_SESSION_DIR) return path.dirname(env.IPA_SESSION_DIR);
+    if (platform === 'darwin') {
+        return path.join(home, 'Library', 'Application Support', 'IDAPastel');
+    }
+    if (platform === 'win32') {
+        return path.join(env.APPDATA || home, 'IDAPastel');
+    }
+    return path.join(env.XDG_CONFIG_HOME || path.join(home, '.config'), 'IDAPastel');
+}
+
 function supportDir() {
-    if (process.env.IPA_DEVICE_DIR) return process.env.IPA_DEVICE_DIR;
-    if (process.env.IPA_SESSION_DIR) return path.dirname(process.env.IPA_SESSION_DIR);
-    if (process.platform === 'darwin') {
-        return path.join(os.homedir(), 'Library', 'Application Support', 'Pastel');
-    }
-    if (process.platform === 'win32') {
-        return path.join(process.env.APPDATA || os.homedir(), 'Pastel');
-    }
-    return path.join(process.env.XDG_CONFIG_HOME || path.join(os.homedir(), '.config'), 'Pastel');
+    return resolveDeviceSupportDirectory();
 }
 
 function guidFile() {

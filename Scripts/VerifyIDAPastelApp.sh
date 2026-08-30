@@ -2,7 +2,18 @@
 set -euo pipefail
 
 app_path="${1:?usage: VerifyIDAPastelApp.sh /Applications/IDAPastel.app}"
+while [[ "$app_path" != "/" && "$app_path" == */ ]]; do
+    app_path="${app_path%/}"
+done
 info_plist="$app_path/Contents/Info.plist"
+
+reject_direct_symlink() {
+    local candidate="$1"
+    if test -L "$candidate"; then
+        echo "Symbolic link not allowed: $candidate" >&2
+        exit 1
+    fi
+}
 
 require_adhoc_signature() {
     local executable_path="$1"
@@ -35,7 +46,9 @@ require_arm64_macho() {
     fi
 }
 
+reject_direct_symlink "$app_path"
 test -d "$app_path"
+reject_direct_symlink "$info_plist"
 test -f "$info_plist"
 
 bundle_id=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$info_plist")
@@ -50,6 +63,12 @@ main_executable="$app_path/Contents/MacOS/$executable"
 node_executable="$app_path/Contents/Resources/node/bin/node"
 sap_signer="$app_path/Contents/Resources/sap-signer"
 
+reject_direct_symlink "$main_executable"
+reject_direct_symlink "$node_executable"
+reject_direct_symlink "$sap_signer"
+test -f "$main_executable"
+test -f "$node_executable"
+test -f "$sap_signer"
 test -x "$main_executable"
 test -x "$node_executable"
 test -x "$sap_signer"

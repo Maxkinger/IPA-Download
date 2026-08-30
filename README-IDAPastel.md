@@ -16,8 +16,10 @@ IDAPastel 维护在 `tv` 分支，使用独立 Bundle ID 和本地数据，不�
 ## 不包含的能力
 
 - 完整 tvOS 历史版本
-- Apple TV 自动安装
+- Apple TV AirDrop 或自动安装
 - 第三方 TV 历史数据
+
+IDAPastel 只负责获取并校验 tvOS IPA，不负责安装或部署。安装/部署属于 IDAPastel 之外的流程，需要根据设备与系统版本使用适当且支持 tvOS 的设备管理或部署方式，例如适用时使用受支持的 Xcode 或 Apple Configurator 流程；本文不承诺自动化安装能力。
 
 ## 安装 DMG
 

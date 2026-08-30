@@ -2,12 +2,19 @@
 set -euo pipefail
 
 app_path="${1:?usage: BuildIDAPastelDMG.sh /Applications/IDAPastel.app dist}"
+while [[ "$app_path" != "/" && "$app_path" == */ ]]; do
+    app_path="${app_path%/}"
+done
 output_dir="${2:?usage: BuildIDAPastelDMG.sh /Applications/IDAPastel.app dist}"
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 info_plist="$app_path/Contents/Info.plist"
 
+if test -L "$app_path"; then
+    echo "Symbolic link not allowed: $app_path" >&2
+    exit 1
+fi
 test -d "$app_path"
-test -f "$info_plist"
+"$script_dir/VerifyIDAPastelApp.sh" "$app_path"
 
 version=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$info_plist")
 if [[ ! "$version" =~ ^[A-Za-z0-9._-]+$ || "$version" == *..* ]]; then
@@ -29,8 +36,6 @@ case "$dmg_path" in
         ;;
 esac
 
-"$script_dir/VerifyIDAPastelApp.sh" "$app_path"
-
 work_dir=$(mktemp -d "$output_dir/.idapastel-dmg.XXXXXX")
 stage_dir="$work_dir/stage"
 staged_dmg_path="$work_dir/$dmg_name"
@@ -43,6 +48,7 @@ trap cleanup EXIT
 
 mkdir -p "$stage_dir"
 cp -R "$app_path" "$stage_dir/IDAPastel.app"
+"$script_dir/VerifyIDAPastelApp.sh" "$stage_dir/IDAPastel.app"
 ln -s /Applications "$stage_dir/Applications"
 
 hdiutil create -volname IDAPastel -srcfolder "$stage_dir" -ov -format UDZO "$staged_dmg_path"

@@ -28,6 +28,22 @@ const TVOS_ERROR_KEYS = Object.freeze({
     TVOS_INFO_INVALID: 'tvos_info_invalid',
 });
 
+const CLEANUP_ERROR_CODES = new Set([
+    'OUTPUT_CLEANUP_FAILED',
+    'TEMP_CLEANUP_FAILED',
+]);
+
+function cleanupFailure(code, message, cleanupError, primaryError = null) {
+    const error = new Error(message, {cause: primaryError || cleanupError});
+    error.code = code;
+    error.cleanupError = cleanupError;
+    if (primaryError) {
+        error.primaryError = primaryError;
+        error.primaryCode = primaryError.code;
+    }
+    return error;
+}
+
 function localizedTVError(error) {
     const key = TVOS_ERROR_KEYS[error?.code];
     if (!key) return error;
@@ -66,10 +82,14 @@ export class Ipa {
     constructor({APPLE_ID, PASSWORD, CODE}, {
         lookupTVVersion = lookupLatestTVExternalVersionID,
         validatePackage = validatePackageForPlatform,
+        removeOutputFile = file => fsPromises.unlink(file),
+        removeTempTree = directory => fsPromises.rm(directory, {recursive: true, force: true}),
     } = {}) {
         this.creds = {APPLE_ID, PASSWORD, CODE};
         this.lookupTVVersion = lookupTVVersion;
         this.validatePackage = validatePackage;
+        this.removeOutputFile = removeOutputFile;
+        this.removeTempTree = removeTempTree;
         this.user = null;
         this.auth = {};
         this.dir = '.';
@@ -188,9 +208,36 @@ export class Ipa {
         try {
             await this.validatePackage(this.out, platform);
         } catch (error) {
-            await fsPromises.unlink(this.out).catch(() => {});
+            try {
+                await this.removeOutputFile(this.out);
+            } catch (cleanupError) {
+                if (cleanupError?.code !== 'ENOENT') {
+                    throw cleanupFailure(
+                        'OUTPUT_CLEANUP_FAILED',
+                        'Failed to remove rejected download output',
+                        cleanupError,
+                        error,
+                    );
+                }
+            }
             throw localizedTVError(error);
         }
+    }
+
+    async cleanupTempParts(primaryError = null) {
+        try {
+            await this.removeTempTree(this.cache);
+        } catch (cleanupError) {
+            if (cleanupError?.code !== 'ENOENT') {
+                throw cleanupFailure(
+                    'TEMP_CLEANUP_FAILED',
+                    'Failed to remove temporary download parts',
+                    cleanupError,
+                    primaryError,
+                );
+            }
+        }
+        console.log(t('cleanup_done'));
     }
 
     // 判断 App 是否免费：优先用上层（App 界面）传入的价格信号，未知时用 iTunes lookup 兜底。
@@ -263,6 +310,7 @@ export class Ipa {
         this.dir = dir;
         this.cache = await fsPromises.mkdtemp(path.join(os.tmpdir(), 'idapastel-download-parts-'));
         console.log(t('temp_dir', {cache: this.cache}));
+        let primaryError = null;
         try {
             const resolvedVersionID = await this.resolveAppVersionID(APPID, appVerId, platform);
             const purchaseResult = await Store.purchase(APPID, resolvedVersionID, this.auth);
@@ -279,11 +327,19 @@ export class Ipa {
             await signer.sign(this.out);
 
             console.log(t('file_archived', {out: this.out}));
+        } catch (error) {
+            primaryError = error;
+            throw error;
         } finally {
             await this.persistCurrentSession().catch(() => {});
-            await fsPromises.rm(this.cache, {recursive: true, force: true}).catch(() => {});
+            let tempCleanupError = null;
+            try {
+                await this.cleanupTempParts(primaryError);
+            } catch (error) {
+                tempCleanupError = error;
+            }
             Store.cleanup?.();
-            console.log(t('cleanup_done'));
+            if (tempCleanupError) throw tempCleanupError;
         }
     }
 
@@ -301,7 +357,8 @@ export class Ipa {
             const message = error.message || String(error);
             // 用稳定的 error.code 判断商店会话过期（cookie/令牌失效），不依赖文案语言；Apple 英文消息保留兜底。
             const code = error.code;
-            const sessionMayBeExpired = this.usedCachedSession
+            const sessionMayBeExpired = !CLEANUP_ERROR_CODES.has(code)
+                && this.usedCachedSession
                 && (code === 'TOKEN_EXPIRED'
                     || /401|403|Your password has changed\.?|password token is expired|token|session|authenticate|authorization|Sign In to the iTunes Store/i.test(message))
                 && !/License not found|已拥有|already|not found/i.test(message);

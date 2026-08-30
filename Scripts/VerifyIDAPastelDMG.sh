@@ -46,4 +46,9 @@ fi
 hdiutil attach "$dmg_path" -readonly -nobrowse -mountpoint "$mount_dir" -quiet
 test -L "$mount_dir/Applications"
 test "$(readlink "$mount_dir/Applications")" = "/Applications"
-"$script_dir/VerifyIDAPastelApp.sh" "$mount_dir/IDAPastel.app"
+mounted_app="$mount_dir/IDAPastel.app"
+if ! test -d "$mounted_app" || test -L "$mounted_app"; then
+    echo "Mounted IDAPastel.app must be a real directory: $mounted_app" >&2
+    exit 1
+fi
+"$script_dir/VerifyIDAPastelApp.sh" "$mounted_app"

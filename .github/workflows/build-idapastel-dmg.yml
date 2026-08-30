@@ -33,6 +33,19 @@ jobs:
       - name: Test Node engine
         run: npm test --prefix NodeProject
 
+      - name: Test downloaded package platform restore
+        run: |
+          xcrun swiftc \
+            -parse-as-library \
+            -module-cache-path "$RUNNER_TEMP/idapastel-swift-module-cache" \
+            Pastel/DownloadedPackagePlatform.swift \
+            Tests/DownloadedPackagePlatformTests.swift \
+            -o "$RUNNER_TEMP/DownloadedPackagePlatformTests"
+          "$RUNNER_TEMP/DownloadedPackagePlatformTests"
+
+      - name: Test workflow asset selection
+        run: ruby Scripts/TestIDAPastelWorkflowAssets.rb
+
       - name: Build IDAPastel
         run: |
           xcodebuild -project Pastel.xcodeproj \
@@ -43,6 +56,7 @@ jobs:
             build
 
       - name: Verify and package
+        id: package
         run: |
           app="$RUNNER_TEMP/DerivedData/Build/Products/Release/IDAPastel.app"
           Scripts/VerifyIDAPastelApp.sh "$app"
@@ -52,17 +66,24 @@ jobs:
           test "${#dmgs[@]}" -eq 1
           dmg="${dmgs[0]}"
           Scripts/VerifyIDAPastelDMG.sh "$dmg"
+          bash Scripts/TestIDAPastelPackaging.sh "$app" "$dmg"
+          checksum="$dmg.sha256"
+          test -f "$checksum"
+          printf 'dmg=%s\n' "$dmg" >> "$GITHUB_OUTPUT"
+          printf 'checksum=%s\n' "$checksum" >> "$GITHUB_OUTPUT"
 
       - uses: actions/upload-artifact@v4
         with:
           name: IDAPastel-arm64
           path: |
-            dist/*.dmg
-            dist/*.sha256
+            ${{ steps.package.outputs.dmg }}
+            ${{ steps.package.outputs.checksum }}
           retention-days: 14
 
       - name: Publish GitHub Release
         if: startsWith(github.ref, 'refs/tags/idapastel-v')
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "$GITHUB_REF_NAME" dist/*.dmg dist/*.sha256 --generate-notes --title "IDAPastel $GITHUB_REF_NAME"
+          DMG_PATH: ${{ steps.package.outputs.dmg }}
+          CHECKSUM_PATH: ${{ steps.package.outputs.checksum }}
+        run: gh release create "$GITHUB_REF_NAME" "$DMG_PATH" "$CHECKSUM_PATH" --generate-notes --title "IDAPastel $GITHUB_REF_NAME"
