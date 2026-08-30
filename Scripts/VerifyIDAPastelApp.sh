@@ -4,6 +4,26 @@ set -euo pipefail
 app_path="${1:?usage: VerifyIDAPastelApp.sh /Applications/IDAPastel.app}"
 info_plist="$app_path/Contents/Info.plist"
 
+require_adhoc_signature() {
+    local executable_path="$1"
+    local signing_details
+
+    signing_details=$(codesign -dvvv "$executable_path" 2>&1)
+    printf '%s\n' "$signing_details" | grep -qx 'Signature=adhoc'
+    printf '%s\n' "$signing_details" | grep -qx 'TeamIdentifier=not set'
+    printf '%s\n' "$signing_details" | grep -Eq '^CodeDirectory .*flags=.*\(adhoc\)'
+
+    if printf '%s\n' "$signing_details" | grep -q '^Authority='; then
+        echo "Developer certificate authority must be absent: $executable_path" >&2
+        exit 1
+    fi
+
+    if printf '%s\n' "$signing_details" | grep -Eq '^CodeDirectory .*flags=.*runtime'; then
+        echo "Hardened runtime must be absent: $executable_path" >&2
+        exit 1
+    fi
+}
+
 test -d "$app_path"
 test -f "$info_plist"
 
@@ -15,10 +35,22 @@ test "$bundle_id" = "com.idapastel.app"
 test "$bundle_name" = "IDAPastel"
 test "$executable" = "IDAPastel"
 
-file "$app_path/Contents/MacOS/$executable" | grep -q 'arm64'
-file "$app_path/Contents/Resources/node/bin/node" | grep -q 'arm64'
-file "$app_path/Contents/Resources/sap-signer" | grep -q 'arm64'
+main_executable="$app_path/Contents/MacOS/$executable"
+node_executable="$app_path/Contents/Resources/node/bin/node"
+sap_signer="$app_path/Contents/Resources/sap-signer"
+
+test -x "$main_executable"
+test -x "$node_executable"
+test -x "$sap_signer"
+
+file "$main_executable" | grep -q 'arm64'
+file "$node_executable" | grep -q 'arm64'
+file "$sap_signer" | grep -q 'arm64'
 codesign --verify --deep --strict --verbose=2 "$app_path"
+require_adhoc_signature "$app_path"
+require_adhoc_signature "$main_executable"
+require_adhoc_signature "$node_executable"
+require_adhoc_signature "$sap_signer"
 
 if /usr/libexec/PlistBuddy -c 'Print :SUFeedURL' "$info_plist" >/dev/null 2>&1; then
     echo 'SUFeedURL must be absent for IDAPastel' >&2
