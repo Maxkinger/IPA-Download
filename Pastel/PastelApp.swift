@@ -754,6 +754,7 @@ struct RunConfig {
     var appCountry: String = "us"
     var allowAppAcquisition: Bool = false
     var removeAppStoreUpdateMetadata: Bool = false
+    var platform: String = AppSearchPlatform.iphone.rawValue
 }
 
 struct WindowChromeConfigurator: NSViewRepresentable {
@@ -987,6 +988,9 @@ func downloadErrorMessage(from log: String) -> String {
         || text.localizedCaseInsensitiveContains("license")
         || text.contains("付费应用未购买") {
         return String(localized: "此 Apple 账户暂时无法获取该 App。请确认账号已拥有此 App 后再试。")
+    }
+    if text.localizedCaseInsensitiveContains("AppleTVOS") {
+        return String(localized: "Apple 返回的不是 tvOS 安装包。")
     }
     if text.contains("文件签名失败")
         || text.contains("MD5 校验失败")
@@ -1433,6 +1437,7 @@ final class DownloadManager: ObservableObject {
         env["DOWNLOAD_APPID"] = config.appID
         env["DOWNLOAD_VERSION_ID"] = config.versionID
         env["DOWNLOAD_DIR"] = config.downloadDir
+        env["DOWNLOAD_PLATFORM"] = config.platform
         if config.listVersionIDs { env["IPA_LIST_VERSION_IDS"] = "1" }
         if config.validateLogin { env["IPA_VALIDATE_LOGIN"] = "1" }
         if config.allowAppAcquisition { env["IPA_ALLOW_APP_ACQUIRE"] = "1" }
@@ -1581,6 +1586,11 @@ struct AppSearchResult: Decodable, Identifiable, Hashable {
             || artworkUrl.lowercased().contains(".lsr/")
             || trackViewUrl.lowercased().contains("/vision")
     }
+
+    var isAppleTVApp: Bool {
+        let value = (platform ?? "").lowercased()
+        return value == "appletv" || value.contains("appletvos") || value.contains("tvos")
+    }
 }
 
 struct SearchResponse: Decodable {
@@ -1645,6 +1655,15 @@ struct DownloadedItem: Identifiable, Hashable {
         softwarePlatform.lowercased().contains("vision")
             || artworkUrl.lowercased().contains(".lsr/")
     }
+
+    var isAppleTVApp: Bool {
+        let value = softwarePlatform.lowercased()
+        return value == "appletv" || value.contains("appletvos") || value.contains("tvos")
+    }
+
+    var platformDisplayName: String {
+        isAppleTVApp ? "Apple TV" : softwarePlatform
+    }
 }
 
 struct DownloadedAppGroup: Identifiable {
@@ -1659,12 +1678,15 @@ struct DownloadedAppGroup: Identifiable {
     var artworkUrl: String { items.first?.artworkUrl ?? "" }
     var softwarePlatform: String { items.first?.softwarePlatform ?? "" }
     var isVisionApp: Bool { items.first?.isVisionApp ?? false }
+    var isAppleTVApp: Bool { items.first?.isAppleTVApp ?? false }
+    var platformDisplayName: String { items.first?.platformDisplayName ?? "" }
 }
 
 private enum AppSearchPlatform: String, CaseIterable, Identifiable {
     case iphone
     case ipad
     case vision
+    case appleTV = "appletv"
 
     var id: String { rawValue }
 
@@ -1673,6 +1695,7 @@ private enum AppSearchPlatform: String, CaseIterable, Identifiable {
         case .iphone: return "iphone"
         case .ipad: return "ipad"
         case .vision: return "vision.pro"
+        case .appleTV: return "appletv"
         }
     }
 
@@ -1681,6 +1704,7 @@ private enum AppSearchPlatform: String, CaseIterable, Identifiable {
         case .iphone: return "iPhone"
         case .ipad: return "iPad"
         case .vision: return "Vision"
+        case .appleTV: return "Apple TV"
         }
     }
 
@@ -1900,6 +1924,15 @@ final class CatalogViewModel: ObservableObject {
         featuredOffset = 0
         selectedSearchID = nil
         searchStatus = String(localized: "正在加载 App...")
+
+        if platform == AppSearchPlatform.appleTV.rawValue {
+            searchResults = []
+            isSearching = false
+            isShowingFeatured = false
+            canLoadMoreFeatured = false
+            searchStatus = String(localized: "Apple TV 暂无推荐榜单，请搜索 App 或输入 App ID。")
+            return
+        }
 
         Task {
             var lastError: Error?
@@ -2892,12 +2925,14 @@ struct ContentView: View {
                     .zIndex(1)
 
                 Group {
-                    if visionHistoryNeedsAppleSource {
+                    if historyNeedsAppleSource {
                         VStack(spacing: 14) {
                             largeEmptyState(
-                                systemImage: "vision.pro",
-                                title: String(localized: "Apple Vision Pro"),
-                                message: String(localized: "Apple Vision Pro 的 App 历史版本目前仅在 Apple 来源提供，其他来源并未收录。"),
+                                systemImage: activeAppIsAppleTV ? "appletv" : "vision.pro",
+                                title: activeAppIsAppleTV ? "Apple TV" : String(localized: "Apple Vision Pro"),
+                                message: activeAppIsAppleTV
+                                    ? String(localized: "Apple TV 目前仅提供 Apple 来源的最新版本或手动版本 ID。")
+                                    : String(localized: "Apple Vision Pro 的 App 历史版本目前仅在 Apple 来源提供，其他来源并未收录。"),
                                 fills: false
                             )
 
@@ -2970,6 +3005,7 @@ struct ContentView: View {
                                             errorLog: downloads.job(jobID)?.log ?? "",
                                             downloadedURL: downloadedURL,
                                             appIcon: downloadedURL.flatMap { versionIcons[$0.path] },
+                                            allowsAirDrop: !activeAppIsAppleTV,
                                             onSelect: {
                                                 handleVersionRowSelection(record)
                                             },
@@ -3157,6 +3193,7 @@ struct ContentView: View {
         case .downloaded:
             FileActionsBar(
                 isSelected: false,
+                allowsAirDrop: !activeAppIsAppleTV,
                 onReveal: {
                     if let url = manualDownloadedURL { revealInFinder(url) }
                 },
@@ -3285,7 +3322,7 @@ struct ContentView: View {
 
             SourceProviderCapsule(
                 selection: catalog.historyProvider,
-                isDisabled: activeAppID.isEmpty || catalog.isLoadingVersions,
+                isDisabled: activeAppID.isEmpty || catalog.isLoadingVersions || activeAppRequiresAppleSource,
                 onSelect: selectHistoryProvider
             )
             .frame(width: 360)
@@ -3294,21 +3331,20 @@ struct ContentView: View {
     }
 
     private func selectHistoryProvider(_ provider: String) {
+        if activeAppRequiresAppleSource && provider != "apple" {
+            catalog.historyProvider = "apple"
+            catalog.versionResults = []
+            catalog.versionStatus = activeAppIsAppleTV
+                ? String(localized: "Apple TV 目前仅提供 Apple 来源的最新版本或手动版本 ID。")
+                : String(localized: "Apple Vision Pro 的 App 历史版本目前仅在 Apple 来源提供，其他来源并未收录。")
+            return
+        }
         guard catalog.historyProvider != provider else { return }
         withAnimation(.snappy(duration: 0.18)) {
             catalog.historyProvider = provider
         }
         appleVersionFetchNeedsAcquisition = false
         guard !activeAppID.isEmpty else { return }
-        if activeAppIsVision && provider != "apple" {
-            selectedVersion = nil
-            selectedVersionIDs.removeAll()
-            lastSelectedVersionID = nil
-            catalog.selectedVersionID = nil
-            catalog.versionResults = []
-            catalog.versionStatus = String(localized: "Apple Vision Pro 的 App 历史版本目前仅在 Apple 来源提供，其他来源并未收录。")
-            return
-        }
         if provider == "apple" {
             fetchVersionIDsFromApple()
         } else {
@@ -3472,10 +3508,12 @@ struct ContentView: View {
                     Text("Timbrd").tag("timbrd")
                     Text("Agzy").tag("agzy")
                     Text("Bilin").tag("bilin")
+                    Text("Apple").tag("apple")
                 }
                 .pickerStyle(.segmented)
                 .controlSize(.large)
                 .frame(width: 330)
+                .disabled(activeAppRequiresAppleSource)
 
                 Button {
                     loadHistoryForActiveApp()
@@ -3533,6 +3571,7 @@ struct ContentView: View {
                                     errorLog: downloads.job(jobID)?.log ?? "",
                                     downloadedURL: downloadedURL,
                                     appIcon: downloadedURL.flatMap { versionIcons[$0.path] },
+                                    allowsAirDrop: !activeAppIsAppleTV,
                                     onSelect: {
                                         handleVersionRowSelection(record)
                                     },
@@ -3740,6 +3779,7 @@ struct ContentView: View {
                                     rowIndex: index,
                                     isSelected: selectedDownloadedItemIDs.contains(item.id),
                                     remoteIconCache: $remoteAppIcons,
+                                    allowsAirDrop: !item.isAppleTVApp,
                                     onSelect: {
                                         handleDownloadedRowSelection(item)
                                     },
@@ -4051,6 +4091,10 @@ struct ContentView: View {
                 HStack(spacing: 14) {
                     let region = appStoreRegion(item.storefrontId)
                     metaLabel(text: region.name)
+                    if item.isAppleTVApp {
+                        metaLabel(systemImage: "appletv", text: item.platformDisplayName)
+                            .help(String(localized: "Apple TV 安装需要使用其他设备管理工具。"))
+                    }
                     if !item.appleAccount.isEmpty {
                         metaLabel(systemImage: "person.crop.circle", text: item.appleAccount)
                     }
@@ -4059,6 +4103,7 @@ struct ContentView: View {
             Spacer(minLength: 8)
             FileActionsBar(
                 isSelected: false,
+                allowsAirDrop: !item.isAppleTVApp,
                 onReveal: { revealInFinder(item.fileURL) },
                 onAirDrop: { airDrop(item.fileURL) },
                 onDelete: { deleteDownloaded(item.fileURL) }
@@ -4378,9 +4423,11 @@ struct ContentView: View {
                     Text("Timbrd").tag("timbrd")
                     Text("Agzy").tag("agzy")
                     Text("Bilin").tag("bilin")
+                    Text("Apple").tag("apple")
                 }
                 .pickerStyle(.segmented)
                 .frame(width: 280)
+                .disabled(activeAppRequiresAppleSource)
             }
             .padding(20)
 
@@ -4653,7 +4700,7 @@ struct ContentView: View {
         manualNoUpdate = false
         catalog.historyAppID = ""
         catalog.platform = AppSearchPlatform.named(selectedSearchPlatformID).rawValue
-        if AppSearchPlatform.named(selectedSearchPlatformID) == .vision {
+        if [.vision, .appleTV].contains(AppSearchPlatform.named(selectedSearchPlatformID)) {
             catalog.historyProvider = "apple"
         }
 
@@ -4677,11 +4724,19 @@ struct ContentView: View {
     }
 
     private var activeAppIsVision: Bool {
-        selectedApp?.isVisionApp == true
+        selectedApp?.isVisionApp == true || selectedSearchPlatform == .vision
     }
 
-    private var visionHistoryNeedsAppleSource: Bool {
-        activeAppIsVision && catalog.historyProvider != "apple" && !activeAppID.isEmpty
+    private var activeAppIsAppleTV: Bool {
+        selectedApp?.isAppleTVApp == true || selectedSearchPlatform == .appleTV
+    }
+
+    private var activeAppRequiresAppleSource: Bool {
+        activeAppIsVision || activeAppIsAppleTV
+    }
+
+    private var historyNeedsAppleSource: Bool {
+        activeAppRequiresAppleSource && catalog.historyProvider != "apple" && !activeAppID.isEmpty
     }
 
     private func selectSearchPlatform(_ platform: AppSearchPlatform) {
@@ -4689,7 +4744,7 @@ struct ContentView: View {
         selectedSearchPlatformID = platform.rawValue
         catalog.platform = platform.rawValue
         clearActiveAppSelectionForPlatformChange()
-        if platform == .vision {
+        if platform == .vision || platform == .appleTV {
             catalog.historyProvider = "apple"
         } else if catalog.historyProvider == "apple" {
             catalog.historyProvider = "auto"
@@ -4747,10 +4802,8 @@ struct ContentView: View {
     private func searchForApp(_ group: DownloadedAppGroup) {
         let query = group.appId.isEmpty ? group.appName : group.appId
         guard !query.isEmpty else { return }
-        if group.isVisionApp {
-            selectedSearchPlatformID = AppSearchPlatform.vision.rawValue
-            catalog.platform = AppSearchPlatform.vision.rawValue
-            catalog.historyProvider = "apple"
+        if let item = group.items.first {
+            applyDownloadedPlatform(item)
         }
         if let code = storefrontCountryCode(group.storefrontId) {
             selectedCountryCode = code
@@ -4784,7 +4837,11 @@ struct ContentView: View {
         manualNoUpdate = false
         catalog.historyAppID = result.id
         rightPanel = .search
-        if result.isVisionApp || selectedSearchPlatform == .vision {
+        if result.isAppleTVApp || selectedSearchPlatform == .appleTV {
+            selectedSearchPlatformID = AppSearchPlatform.appleTV.rawValue
+            catalog.platform = AppSearchPlatform.appleTV.rawValue
+            catalog.historyProvider = "apple"
+        } else if result.isVisionApp || selectedSearchPlatform == .vision {
             selectedSearchPlatformID = AppSearchPlatform.vision.rawValue
             catalog.platform = AppSearchPlatform.vision.rawValue
             catalog.historyProvider = "apple"
@@ -4854,6 +4911,7 @@ struct ContentView: View {
     }
 
     private func downloadSelectedVersions() {
+        guard !activeAppIsAppleTV else { return }
         let records = catalog.versionResults.filter { selectedVersionIDs.contains($0.id) }
         guard !records.isEmpty else { return }
         for record in records {
@@ -4866,7 +4924,7 @@ struct ContentView: View {
     }
 
     private func showsBatchDownloadMenu(for record: VersionRecord) -> Bool {
-        selectedVersionIDs.count > 1 && selectedVersionIDs.contains(record.id)
+        !activeAppIsAppleTV && selectedVersionIDs.count > 1 && selectedVersionIDs.contains(record.id)
     }
 
     private func handleSelectAllShortcut() {
@@ -4904,8 +4962,9 @@ struct ContentView: View {
 
     private func selectAllVersionRows() {
         guard !catalog.versionResults.isEmpty else { return }
-        selectedVersionIDs = Set(catalog.versionResults.map(\.id))
-        if let first = catalog.versionResults.first {
+        let selectableResults = activeAppIsAppleTV ? Array(catalog.versionResults.prefix(1)) : catalog.versionResults
+        selectedVersionIDs = Set(selectableResults.map(\.id))
+        if let first = selectableResults.first {
             selectVersion(first, updateSelection: false)
         }
     }
@@ -5133,7 +5192,8 @@ struct ContentView: View {
         let config = RunConfig(appleAccount: acct, password: pwd, code: "",
                                appID: appID, versionID: "", downloadDir: "", listVersionIDs: true,
                                appIsFree: appIsFreeFlag(), appCountry: selectedCountryCode,
-                               allowAppAcquisition: allowAppAcquisition)
+                               allowAppAcquisition: allowAppAcquisition,
+                               platform: selectedSearchPlatform.rawValue)
         downloads.start(id: Self.versionIDsFetchJobKey, label: String(localized: "获取版本列表"), config: config)
     }
 
@@ -5227,14 +5287,24 @@ struct ContentView: View {
             catalog.versionStatus = String(localized: "此 Apple 账户未拥有此 App，是否从 Apple 获取此 App？")
             return
         }
-        let records = ids.reversed().map { id in
+        let visibleIDs: [String]
+        if activeAppIsAppleTV {
+            let latestVersionID = (obj["latestVersionId"] as? String)?
+                .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            visibleIDs = latestVersionID.isEmpty ? Array(ids.prefix(1)) : [latestVersionID]
+        } else {
+            visibleIDs = Array(ids.reversed())
+        }
+        let records = visibleIDs.map { id in
             VersionRecord(id: "apple-\(id)", version: "—", versionId: id, date: "", size: "", source: "Apple")
         }
         appleVersionFetchNeedsAcquisition = false
         selectedVersionIDs.removeAll()
         lastSelectedVersionID = nil
         catalog.versionResults = records
-        catalog.versionStatus = String(localized: "已从 Apple 元数据获取 \(records.count) 个版本 ID。")
+        catalog.versionStatus = activeAppIsAppleTV
+            ? String(localized: "Apple TV 目前仅提供 Apple 来源的最新版本或手动版本 ID。")
+            : String(localized: "已从 Apple 元数据获取 \(records.count) 个版本 ID。")
     }
 
     private func refreshDownloadedFiles() {
@@ -5586,11 +5656,7 @@ struct ContentView: View {
         catalog.historyAppID = item.appId
         catalog.selectedSearchID = item.appId
         rightPanel = .search
-        if item.isVisionApp {
-            selectedSearchPlatformID = AppSearchPlatform.vision.rawValue
-            catalog.platform = AppSearchPlatform.vision.rawValue
-            catalog.historyProvider = "apple"
-        }
+        applyDownloadedPlatform(item)
         loadHistoryForActiveApp()
     }
 
@@ -5608,12 +5674,30 @@ struct ContentView: View {
         catalog.historyAppID = group.appId
         catalog.selectedSearchID = group.appId
         rightPanel = .search
-        if group.isVisionApp {
-            selectedSearchPlatformID = AppSearchPlatform.vision.rawValue
-            catalog.platform = AppSearchPlatform.vision.rawValue
-            catalog.historyProvider = "apple"
-        }
+        applyDownloadedPlatform(item)
         loadHistoryForActiveApp()
+    }
+
+    private func applyDownloadedPlatform(_ item: DownloadedItem) {
+        let normalizedPlatform = item.softwarePlatform.lowercased()
+        let platform: AppSearchPlatform
+        if item.isAppleTVApp {
+            platform = .appleTV
+        } else if item.isVisionApp {
+            platform = .vision
+        } else if normalizedPlatform.contains("ipad") {
+            platform = .ipad
+        } else {
+            platform = .iphone
+        }
+
+        selectedSearchPlatformID = platform.rawValue
+        catalog.platform = platform.rawValue
+        if platform == .appleTV || platform == .vision {
+            catalog.historyProvider = "apple"
+        } else if catalog.historyProvider == "apple" {
+            catalog.historyProvider = "auto"
+        }
     }
 
     private func searchResult(from item: DownloadedItem) -> AppSearchResult {
@@ -5646,14 +5730,16 @@ struct ContentView: View {
         selectedVersion = nil
         selectedVersionIDs.removeAll()
         catalog.selectedVersionID = nil
-        if activeAppIsVision && catalog.historyProvider != "apple" {
+        if activeAppRequiresAppleSource && catalog.historyProvider != "apple" {
             selectedVersionIDs.removeAll()
             lastSelectedVersionID = nil
             catalog.versionResults = []
-            catalog.versionStatus = String(localized: "Apple Vision Pro 的 App 历史版本目前仅在 Apple 来源提供，其他来源并未收录。")
+            catalog.versionStatus = activeAppIsAppleTV
+                ? String(localized: "Apple TV 目前仅提供 Apple 来源的最新版本或手动版本 ID。")
+                : String(localized: "Apple Vision Pro 的 App 历史版本目前仅在 Apple 来源提供，其他来源并未收录。")
             return
         }
-        if catalog.historyProvider == "apple" || activeAppIsVision {
+        if catalog.historyProvider == "apple" || activeAppRequiresAppleSource {
             fetchVersionIDsFromApple()
             return
         }
@@ -5721,7 +5807,8 @@ struct ContentView: View {
             appID: cleanAppID,
             versionID: cleanVersionID,
             downloadDir: cleanDir,
-            removeAppStoreUpdateMetadata: removeUpdateMetadata
+            removeAppStoreUpdateMetadata: removeUpdateMetadata,
+            platform: selectedSearchPlatform.rawValue
         )
         let variant = IPADownloadVariant(removeAppStoreUpdateMetadata: removeUpdateMetadata)
         let manualVersionKey = cleanVersionID.isEmpty ? "latest" : cleanVersionID
@@ -5740,6 +5827,16 @@ struct ContentView: View {
         selectedVersionIDs.removeAll()
         catalog.historyAppID = result.id
         catalog.selectedSearchID = result.id
+
+        if result.isAppleTVApp || selectedSearchPlatform == .appleTV {
+            selectedSearchPlatformID = AppSearchPlatform.appleTV.rawValue
+            catalog.platform = AppSearchPlatform.appleTV.rawValue
+            catalog.historyProvider = "apple"
+        } else if result.isVisionApp || selectedSearchPlatform == .vision {
+            selectedSearchPlatformID = AppSearchPlatform.vision.rawValue
+            catalog.platform = AppSearchPlatform.vision.rawValue
+            catalog.historyProvider = "apple"
+        }
 
         if openVersions {
             rightPanel = .versions
@@ -5930,6 +6027,13 @@ private struct DownloadedAppSidebarRow: View {
                     Text(group.developer.isEmpty ? group.bundleId : group.developer)
                         .lineLimit(1)
                         .truncationMode(.tail)
+                    if group.isAppleTVApp {
+                        Text(group.platformDisplayName)
+                            .fontWeight(.medium)
+                            .lineLimit(1)
+                            .fixedSize(horizontal: true, vertical: false)
+                            .help(String(localized: "Apple TV 安装需要使用其他设备管理工具。"))
+                    }
                     Spacer(minLength: 8)
                     Text(String(localized: "\(group.items.count) 个版本"))
                         .lineLimit(1)
@@ -6064,6 +6168,7 @@ private struct DownloadedVersionHistoryRow: View {
     let rowIndex: Int
     let isSelected: Bool
     @Binding var remoteIconCache: [String: NSImage]
+    let allowsAirDrop: Bool
     let onSelect: () -> Void
     let onReveal: () -> Void
     let onAirDrop: () -> Void
@@ -6080,11 +6185,20 @@ private struct DownloadedVersionHistoryRow: View {
             HStack(spacing: 0) {
                 rowIcon
 
-                Text(item.version.isEmpty ? "—" : item.version)
-                    .font(.callout.weight(.semibold))
-                    .foregroundStyle(primaryTextStyle)
-                    .lineLimit(1)
-                    .frame(width: columns.version, alignment: .leading)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(item.version.isEmpty ? "—" : item.version)
+                        .font(.callout.weight(.semibold))
+                        .foregroundStyle(primaryTextStyle)
+                        .lineLimit(1)
+                    if item.isAppleTVApp {
+                        Text(item.platformDisplayName)
+                            .font(.caption2.weight(.medium))
+                            .foregroundStyle(secondaryTextStyle)
+                            .lineLimit(1)
+                            .help(String(localized: "Apple TV 安装需要使用其他设备管理工具。"))
+                    }
+                }
+                .frame(width: columns.version, alignment: .leading)
 
                 HoverCopyIDText(value: item.versionId, isVisible: isHovered, isSelected: isSelected)
                     .frame(width: columns.versionID, alignment: .leading)
@@ -6118,7 +6232,7 @@ private struct DownloadedVersionHistoryRow: View {
 
                 Color.clear.frame(width: Self.actionGap, height: 1)
 
-                FileActionsBar(isSelected: isSelected, onReveal: onReveal, onAirDrop: onAirDrop, onDelete: onDelete)
+                FileActionsBar(isSelected: isSelected, allowsAirDrop: allowsAirDrop, onReveal: onReveal, onAirDrop: onAirDrop, onDelete: onDelete)
                     .frame(width: Self.actionColumnWidth, alignment: .trailing)
             }
             .padding(.horizontal, Self.rowHorizontalPadding)
@@ -6684,6 +6798,7 @@ struct VersionSelectionRow: View {
     let errorLog: String
     let downloadedURL: URL?
     let appIcon: NSImage?
+    let allowsAirDrop: Bool
     let onSelect: () -> Void
     let onToggleNoUpdate: (Bool) -> Void
     let onDownload: () -> Void
@@ -6797,7 +6912,7 @@ struct VersionSelectionRow: View {
                 .glassEffectID("version-row-action", in: actionGlassNamespace)
                 .glassEffectTransition(.matchedGeometry)
         case .downloaded:
-            FileActionsBar(isSelected: isSelected, onReveal: onReveal, onAirDrop: onAirDrop, onDelete: onDelete)
+            FileActionsBar(isSelected: isSelected, allowsAirDrop: allowsAirDrop, onReveal: onReveal, onAirDrop: onAirDrop, onDelete: onDelete)
                 .glassEffectID("version-row-action", in: actionGlassNamespace)
                 .glassEffectTransition(.matchedGeometry)
         case .ready:
@@ -7007,6 +7122,7 @@ private struct CopyGlyphButton: View {
 
 private struct FileActionsBar: View {
     let isSelected: Bool
+    let allowsAirDrop: Bool
     let onReveal: () -> Void
     let onAirDrop: () -> Void
     let onDelete: () -> Void
@@ -7014,7 +7130,9 @@ private struct FileActionsBar: View {
     var body: some View {
         HStack(spacing: 0) {
             FileActionButton(systemImage: "finder", tint: .secondary, size: 14.5, help: String(localized: "在访达中显示"), action: onReveal)
-            FileActionButton(systemImage: "square.and.arrow.up", tint: Color.accentColor, size: 13, yOffset: -1, help: String(localized: "通过 AirDrop 发送"), action: onAirDrop)
+            if allowsAirDrop {
+                FileActionButton(systemImage: "square.and.arrow.up", tint: Color.accentColor, size: 13, yOffset: -1, help: String(localized: "通过 AirDrop 发送"), action: onAirDrop)
+            }
             FileActionButton(systemImage: "trash", tint: .red, size: 13.5, help: String(localized: "删除本地文件"), action: onDelete)
         }
         .padding(2)

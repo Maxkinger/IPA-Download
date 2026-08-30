@@ -494,6 +494,90 @@
         }
       }
     },
+    "Apple TV 安装需要使用其他设备管理工具。" : {
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Apple TV へのインストールには別のデバイス管理ツールが必要です。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Apple TV에 설치하려면 다른 기기 관리 도구가 필요합니다."
+          }
+        },
+        "th" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "การติดตั้งบน Apple TV ต้องใช้เครื่องมือจัดการอุปกรณ์อื่น"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Apple TV 安裝需要使用其他裝置管理工具。"
+          }
+        }
+      }
+    },
+    "Apple TV 暂无推荐榜单，请搜索 App 或输入 App ID。" : {
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Apple TV のおすすめランキングは現在利用できません。App を検索するか App ID を入力してください。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Apple TV 추천 순위는 현재 제공되지 않습니다. App을 검색하거나 App ID를 입력하세요."
+          }
+        },
+        "th" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ขณะนี้ไม่มีรายการแนะนำสำหรับ Apple TV โปรดค้นหาแอปหรือป้อน App ID"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Apple TV 暫無推薦排行榜，請搜尋 App 或輸入 App ID。"
+          }
+        }
+      }
+    },
+    "Apple TV 目前仅提供 Apple 来源的最新版本或手动版本 ID。" : {
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Apple TV では現在、Apple から取得した最新バージョンまたは手動入力したバージョン ID のみ利用できます。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Apple TV는 현재 Apple에서 가져온 최신 버전 또는 수동 버전 ID만 제공합니다."
+          }
+        },
+        "th" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ขณะนี้ Apple TV รองรับเฉพาะเวอร์ชันล่าสุดจาก Apple หรือ ID เวอร์ชันที่ป้อนด้วยตนเอง"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Apple TV 目前僅提供 Apple 來源的最新版本或手動版本 ID。"
+          }
+        }
+      }
+    },
     "Apple Vision Pro" : {
       "localizations" : {
         "en" : {
@@ -558,6 +642,34 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Apple Vision Pro 的 App 歷史版本目前僅在 Apple 來源提供，其他來源並未收錄。"
+          }
+        }
+      }
+    },
+    "Apple 返回的不是 tvOS 安装包。" : {
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Apple から返されたファイルは tvOS インストールパッケージではありません。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Apple에서 반환한 파일은 tvOS 설치 패키지가 아닙니다."
+          }
+        },
+        "th" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ไฟล์ที่ Apple ส่งกลับไม่ใช่แพ็กเกจติดตั้ง tvOS"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Apple 傳回的不是 tvOS 安裝套件。"
           }
         }
       }
