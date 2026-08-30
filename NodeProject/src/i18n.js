@@ -73,6 +73,12 @@ const MESSAGES = {
         file_archived: '文件存档：[OK] 文件已存至当前目录: {out}',
         cleanup_done: '清理缓存：[OK] 临时文件已删除。',
         relogin: '登录账号：[!] 本地会话可能已失效，正在重新登录。',
+        tvos_no_app: 'Apple TV 版本查询失败：未找到此 App。',
+        tvos_no_offer: 'Apple TV 版本查询失败：此 App 没有 tvOS 版本。',
+        tvos_no_version: 'Apple TV 版本查询失败：未获得外部版本 ID。',
+        tvos_wrong_platform: '包校验失败：Apple 返回的文件不支持 AppleTVOS。',
+        tvos_info_missing: '包校验失败：未找到主 App 的 Info.plist。',
+        tvos_info_invalid: '包校验失败：主 App 的 Info.plist 无法解析。',
     },
 
     'zh-HK': {
@@ -145,6 +151,12 @@ const MESSAGES = {
         file_archived: '檔案存檔：[OK] 檔案已存至目前目錄: {out}',
         cleanup_done: '清理快取：[OK] 暫存檔已刪除。',
         relogin: '登入帳戶：[!] 本機工作階段可能已失效，正在重新登入。',
+        tvos_no_app: 'Apple TV 版本查詢失敗：找不到此 App。',
+        tvos_no_offer: 'Apple TV 版本查詢失敗：此 App 沒有 tvOS 版本。',
+        tvos_no_version: 'Apple TV 版本查詢失敗：未取得外部版本 ID。',
+        tvos_wrong_platform: '套件驗證失敗：Apple 傳回的檔案不支援 AppleTVOS。',
+        tvos_info_missing: '套件驗證失敗：找不到主 App 的 Info.plist。',
+        tvos_info_invalid: '套件驗證失敗：無法解析主 App 的 Info.plist。',
     },
 
     'zh-Hant': {
@@ -217,6 +229,12 @@ const MESSAGES = {
         file_archived: '檔案封存：[OK] 檔案已儲存至目前目錄: {out}',
         cleanup_done: '清理快取：[OK] 暫存檔已刪除。',
         relogin: '登入帳號：[!] 本機工作階段可能已失效，正在重新登入。',
+        tvos_no_app: 'Apple TV 版本查詢失敗：找不到此 App。',
+        tvos_no_offer: 'Apple TV 版本查詢失敗：此 App 沒有 tvOS 版本。',
+        tvos_no_version: 'Apple TV 版本查詢失敗：未取得外部版本 ID。',
+        tvos_wrong_platform: '套件驗證失敗：Apple 傳回的檔案不支援 AppleTVOS。',
+        tvos_info_missing: '套件驗證失敗：找不到主 App 的 Info.plist。',
+        tvos_info_invalid: '套件驗證失敗：無法解析主 App 的 Info.plist。',
     },
 
     'ja': {
@@ -289,6 +307,12 @@ const MESSAGES = {
         file_archived: 'ファイル保存：[OK] ファイルを現在のディレクトリに保存しました: {out}',
         cleanup_done: 'キャッシュ削除：[OK] 一時ファイルを削除しました。',
         relogin: 'サインイン：[!] ローカルセッションが無効の可能性があります。再サインインしています。',
+        tvos_no_app: 'Apple TV のバージョン検索に失敗：この App が見つかりません。',
+        tvos_no_offer: 'Apple TV のバージョン検索に失敗：この App には tvOS バージョンがありません。',
+        tvos_no_version: 'Apple TV のバージョン検索に失敗：外部バージョン ID を取得できませんでした。',
+        tvos_wrong_platform: 'パッケージ検証に失敗：Apple から返されたファイルは AppleTVOS に対応していません。',
+        tvos_info_missing: 'パッケージ検証に失敗：メイン App の Info.plist が見つかりません。',
+        tvos_info_invalid: 'パッケージ検証に失敗：メイン App の Info.plist を解析できません。',
     },
 
     'ko': {
@@ -361,6 +385,12 @@ const MESSAGES = {
         file_archived: '파일 저장: [OK] 파일을 현재 디렉터리에 저장했습니다: {out}',
         cleanup_done: '캐시 정리: [OK] 임시 파일을 삭제했습니다.',
         relogin: '로그인: [!] 로컬 세션이 만료되었을 수 있습니다. 다시 로그인합니다.',
+        tvos_no_app: 'Apple TV 버전 조회 실패: 이 App을 찾을 수 없습니다.',
+        tvos_no_offer: 'Apple TV 버전 조회 실패: 이 App의 tvOS 버전이 없습니다.',
+        tvos_no_version: 'Apple TV 버전 조회 실패: 외부 버전 ID를 가져오지 못했습니다.',
+        tvos_wrong_platform: '패키지 검증 실패: Apple에서 반환한 파일은 AppleTVOS를 지원하지 않습니다.',
+        tvos_info_missing: '패키지 검증 실패: 기본 App의 Info.plist를 찾을 수 없습니다.',
+        tvos_info_invalid: '패키지 검증 실패: 기본 App의 Info.plist를 파싱할 수 없습니다.',
     },
 
     'th': {
@@ -433,6 +463,12 @@ const MESSAGES = {
         file_archived: 'จัดเก็บไฟล์: [OK] บันทึกไฟล์ไว้ที่ไดเรกทอรีปัจจุบันแล้ว: {out}',
         cleanup_done: 'ล้างแคช: [OK] ลบไฟล์ชั่วคราวแล้ว',
         relogin: 'ลงชื่อเข้าใช้: [!] เซสชันในเครื่องอาจหมดอายุ กำลังเข้าสู่ระบบใหม่',
+        tvos_no_app: 'การค้นหาเวอร์ชัน Apple TV ล้มเหลว: ไม่พบแอปนี้',
+        tvos_no_offer: 'การค้นหาเวอร์ชัน Apple TV ล้มเหลว: แอปนี้ไม่มีเวอร์ชัน tvOS',
+        tvos_no_version: 'การค้นหาเวอร์ชัน Apple TV ล้มเหลว: ไม่พบ ID เวอร์ชันภายนอก',
+        tvos_wrong_platform: 'การตรวจสอบแพ็กเกจล้มเหลว: ไฟล์ที่ Apple ส่งกลับไม่รองรับ AppleTVOS',
+        tvos_info_missing: 'การตรวจสอบแพ็กเกจล้มเหลว: ไม่พบ Info.plist ของแอปหลัก',
+        tvos_info_invalid: 'การตรวจสอบแพ็กเกจล้มเหลว: ไม่สามารถอ่าน Info.plist ของแอปหลักได้',
     },
 
     'en': {
@@ -505,6 +541,12 @@ const MESSAGES = {
         file_archived: 'Archive file: [OK] File saved to current directory: {out}',
         cleanup_done: 'Cleanup: [OK] Temporary files removed.',
         relogin: 'Sign in: [!] Local session may be invalid, signing in again.',
+        tvos_no_app: 'Apple TV version lookup failed: this App was not found.',
+        tvos_no_offer: 'Apple TV version lookup failed: this App has no tvOS version.',
+        tvos_no_version: 'Apple TV version lookup failed: no external version ID was returned.',
+        tvos_wrong_platform: 'Package validation failed: the file returned by Apple does not support AppleTVOS.',
+        tvos_info_missing: "Package validation failed: the main App's Info.plist was not found.",
+        tvos_info_invalid: "Package validation failed: the main App's Info.plist could not be parsed.",
     },
 };
 

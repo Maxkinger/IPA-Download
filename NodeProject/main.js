@@ -106,10 +106,11 @@ async function runCommand(command, args) {
         }
 
         await app.login();
+        const platform = process.env.DOWNLOAD_PLATFORM || 'iphone';
 
         // 兜底模式：只登录并从 Apple 元数据取版本 ID 列表，不下载。
         if (process.env.IPA_LIST_VERSION_IDS) {
-            const result = await app.listVersionIds(requiredEnv('DOWNLOAD_APPID'));
+            const result = await app.listVersionIds(requiredEnv('DOWNLOAD_APPID'), platform);
             printJSON(result);
             console.log(t('all_done'));
             return;
@@ -119,6 +120,7 @@ async function runCommand(command, args) {
             dir: process.env.DOWNLOAD_DIR || './app',
             APPID: requiredEnv('DOWNLOAD_APPID'),
             appVerId: process.env.DOWNLOAD_VERSION_ID || '',
+            platform,
         });
 
         console.log(t('all_done'));

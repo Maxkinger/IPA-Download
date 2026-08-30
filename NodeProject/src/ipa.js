@@ -8,6 +8,9 @@ import {readCookieJar, restoreCookieJar} from './gsa.js';
 import {SignatureClient} from './Signature.js';
 import {download} from './downloader.js';
 import {t} from './i18n.js';
+import {isAppleTVPlatform} from './platform.js';
+import {lookupLatestTVExternalVersionID} from './tvos-version.js';
+import {validatePackageForPlatform} from './package-platform.js';
 
 const SESSION_TTL_MS = Number(process.env.IPA_SESSION_TTL_MS || 365 * 24 * 60 * 60 * 1000);
 // Every authentication implementation gets its own session generation. Never
@@ -15,6 +18,23 @@ const SESSION_TTL_MS = Number(process.env.IPA_SESSION_TTL_MS || 365 * 24 * 60 * 
 // the StoreServices session to the authentication flow that created them.
 export const SESSION_FLOW_VERSION = 'appstore-sap-v2';
 const ACCEPTED_SESSION_FLOW_VERSIONS = new Set([SESSION_FLOW_VERSION]);
+
+const TVOS_ERROR_KEYS = Object.freeze({
+    TVOS_NO_APP: 'tvos_no_app',
+    TVOS_NO_OFFER: 'tvos_no_offer',
+    TVOS_NO_VERSION: 'tvos_no_version',
+    TVOS_PLATFORM_MISMATCH: 'tvos_wrong_platform',
+    TVOS_INFO_MISSING: 'tvos_info_missing',
+    TVOS_INFO_INVALID: 'tvos_info_invalid',
+});
+
+function localizedTVError(error) {
+    const key = TVOS_ERROR_KEYS[error?.code];
+    if (!key) return error;
+    const localized = new Error(t(key));
+    localized.code = error.code;
+    return localized;
+}
 
 function appSupportDir() {
     if (process.env.IPA_SESSION_DIR) return process.env.IPA_SESSION_DIR;
@@ -43,8 +63,13 @@ function validSessionFor(email, session) {
 }
 
 export class Ipa {
-    constructor({APPLE_ID, PASSWORD, CODE}) {
+    constructor({APPLE_ID, PASSWORD, CODE}, {
+        lookupTVVersion = lookupLatestTVExternalVersionID,
+        validatePackage = validatePackageForPlatform,
+    } = {}) {
         this.creds = {APPLE_ID, PASSWORD, CODE};
+        this.lookupTVVersion = lookupTVVersion;
+        this.validatePackage = validatePackage;
         this.user = null;
         this.auth = {};
         this.dir = '.';
@@ -149,6 +174,25 @@ export class Ipa {
         return s;
     }
 
+    async resolveAppVersionID(APPID, appVerId, platform) {
+        const explicit = String(appVerId || '').trim();
+        if (explicit || !isAppleTVPlatform(platform)) return explicit;
+        try {
+            return await this.lookupTVVersion(APPID, {country: process.env.IPA_APP_COUNTRY || 'us'});
+        } catch (error) {
+            throw localizedTVError(error);
+        }
+    }
+
+    async validateDownloadedPackage(platform) {
+        try {
+            await this.validatePackage(this.out, platform);
+        } catch (error) {
+            await fsPromises.unlink(this.out).catch(() => {});
+            throw localizedTVError(error);
+        }
+    }
+
     // 判断 App 是否免费：优先用上层（App 界面）传入的价格信号，未知时用 iTunes lookup 兜底。
     // 仅免费 App 才允许主动申请购买许可；付费 App 一律不触发购买（已购买的会直接命中 AppInfo）。
     async isFreeApp(APPID) {
@@ -162,14 +206,16 @@ export class Ipa {
 
     // 从 Apple 官方元数据获取该 App 的全部历史版本 ID（外部版本标识）。
     // 用于第三方来源不可用时的兜底：登录后读取 softwareVersionExternalIdentifiers。
-    async listVersionIds(APPID) {
+    async listVersionIds(APPID, platform = 'iphone') {
         if (!this.user) throw new Error('Please login() first');
-        return await this._withReauth(() => this._listVersionIdsOnce(APPID));
+        return await this._withReauth(() => this._listVersionIdsOnce(APPID, platform));
     }
 
-    async _listVersionIdsOnce(APPID) {
+    async _listVersionIdsOnce(APPID, platform) {
+        const appleTV = isAppleTVPlatform(platform);
+        const resolvedVersionID = await this.resolveAppVersionID(APPID, '', platform);
         // 先直接查（已购买 / 已获取过的 App 无需再申请许可，不产生任何副作用）。
-        let song = await Store.AppInfo(APPID, '', this.auth).catch(error => ({_error: error}));
+        let song = await Store.AppInfo(APPID, resolvedVersionID, this.auth).catch(error => ({_error: error}));
         if (song?._error) {
             // 用稳定的 error.code 判断「缺少许可」，不依赖文案语言；Apple 自身英文消息保留兜底。
             const noLicense = song._error.code === 'APPINFO_FAIL' || /License not found/i.test(song._error.message || '');
@@ -185,14 +231,24 @@ export class Ipa {
                     versionIds: [],
                 };
             }
-            await Store.purchase(APPID, '', this.auth);
-            song = await Store.AppInfo(APPID, '', this.auth);
+            await Store.purchase(APPID, resolvedVersionID, this.auth);
+            song = await Store.AppInfo(APPID, resolvedVersionID, this.auth);
         }
         const s = song?.songList?.[0];
         const meta = s?.metadata || {};
         const ids = Array.isArray(meta.softwareVersionExternalIdentifiers)
             ? meta.softwareVersionExternalIdentifiers.map(String)
             : [];
+        if (appleTV) {
+            return {
+                appId: String(APPID),
+                name: meta.bundleDisplayName || 'UnknownApp',
+                latestVersion: meta.bundleShortVersionString || '',
+                latestVersionId: resolvedVersionID,
+                versionIds: [resolvedVersionID],
+                platform: 'appletv',
+            };
+        }
         return {
             appId: String(APPID),
             name: meta.bundleDisplayName || 'UnknownApp',
@@ -202,17 +258,19 @@ export class Ipa {
         };
     }
 
-    async runDownload({dir = '.', APPID, appVerId} = {}) {
+    async runDownload({dir = '.', APPID, appVerId, platform = 'iphone'} = {}) {
         if (!this.user) throw new Error('Please login() first');
         this.dir = dir;
-        this.cache = await fsPromises.mkdtemp(path.join(os.tmpdir(), 'ipa-history-download-parts-'));
+        this.cache = await fsPromises.mkdtemp(path.join(os.tmpdir(), 'idapastel-download-parts-'));
         console.log(t('temp_dir', {cache: this.cache}));
         try {
-            const purchaseResult = await Store.purchase(APPID, appVerId, this.auth);
+            const resolvedVersionID = await this.resolveAppVersionID(APPID, appVerId, platform);
+            const purchaseResult = await Store.purchase(APPID, resolvedVersionID, this.auth);
             console.log(t('purchase_ok', {message: purchaseResult.customerMessage}));
-            const song = await this.info(APPID, appVerId);
+            const song = await this.info(APPID, resolvedVersionID);
             const res = await download(song.URL, this.out, this.cache, this.auth.authHeaders || {});
             console.log(t('download_complete', {mb: (res.fileSize / 1024 / 1024).toFixed(2), parts: res.parts}));
+            await this.validateDownloadedPackage(platform);
             // 稳定的机器标记：进入「校验/签名/存档」阶段，供 App 显示「打包中」（与显示文案解耦，不随语言变化）。
             console.log('@@IPA:phase=packaging');
             const signer = new SignatureClient(song, this.user.accountInfo.appleId, {
