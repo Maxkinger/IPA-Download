@@ -8,9 +8,33 @@ info_plist="$app_path/Contents/Info.plist"
 
 test -d "$app_path"
 test -f "$info_plist"
-"$script_dir/VerifyIDAPastelApp.sh" "$app_path"
 
 version=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$info_plist")
+if [[ ! "$version" =~ ^[A-Za-z0-9._-]+$ || "$version" == *..* ]]; then
+    echo "Unsafe CFBundleShortVersionString: $version" >&2
+    exit 1
+fi
+
+mkdir -p "$output_dir"
+output_dir="$(cd "$output_dir" && pwd -P)"
+
+dmg_name="IDAPastel-${version}-arm64.dmg"
+dmg_path="$output_dir/$dmg_name"
+checksum_path="$dmg_path.sha256"
+case "$dmg_path" in
+    "$output_dir"/*) ;;
+    *)
+        echo "DMG output must remain under: $output_dir" >&2
+        exit 1
+        ;;
+esac
+if test -L "$dmg_path" || test -L "$checksum_path"; then
+    echo 'DMG output and checksum paths must not be symlinks' >&2
+    exit 1
+fi
+
+"$script_dir/VerifyIDAPastelApp.sh" "$app_path"
+
 work_dir=$(mktemp -d "${TMPDIR:-/tmp}/idapastel-dmg.XXXXXX")
 stage_dir="$work_dir/stage"
 
@@ -19,12 +43,10 @@ cleanup() {
 }
 trap cleanup EXIT
 
-mkdir -p "$stage_dir" "$output_dir"
+mkdir -p "$stage_dir"
 cp -R "$app_path" "$stage_dir/IDAPastel.app"
 ln -s /Applications "$stage_dir/Applications"
 
-dmg_name="IDAPastel-${version}-arm64.dmg"
-dmg_path="$output_dir/$dmg_name"
 hdiutil create -volname IDAPastel -srcfolder "$stage_dir" -ov -format UDZO "$dmg_path"
 (
     cd "$output_dir"
