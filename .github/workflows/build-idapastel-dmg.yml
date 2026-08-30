@@ -47,7 +47,10 @@ jobs:
           app="$RUNNER_TEMP/DerivedData/Build/Products/Release/IDAPastel.app"
           Scripts/VerifyIDAPastelApp.sh "$app"
           Scripts/BuildIDAPastelDMG.sh "$app" dist
-          dmg=$(find dist -name 'IDAPastel-*-arm64.dmg' -print -quit)
+          shopt -s nullglob
+          dmgs=(dist/IDAPastel-*-arm64.dmg)
+          test "${#dmgs[@]}" -eq 1
+          dmg="${dmgs[0]}"
           Scripts/VerifyIDAPastelDMG.sh "$dmg"
 
       - uses: actions/upload-artifact@v4
