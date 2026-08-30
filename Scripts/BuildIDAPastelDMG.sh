@@ -28,15 +28,13 @@ case "$dmg_path" in
         exit 1
         ;;
 esac
-if test -L "$dmg_path" || test -L "$checksum_path"; then
-    echo 'DMG output and checksum paths must not be symlinks' >&2
-    exit 1
-fi
 
 "$script_dir/VerifyIDAPastelApp.sh" "$app_path"
 
-work_dir=$(mktemp -d "${TMPDIR:-/tmp}/idapastel-dmg.XXXXXX")
+work_dir=$(mktemp -d "$output_dir/.idapastel-dmg.XXXXXX")
 stage_dir="$work_dir/stage"
+staged_dmg_path="$work_dir/$dmg_name"
+staged_checksum_path="$work_dir/$dmg_name.sha256"
 
 cleanup() {
     rm -rf "$work_dir"
@@ -47,8 +45,19 @@ mkdir -p "$stage_dir"
 cp -R "$app_path" "$stage_dir/IDAPastel.app"
 ln -s /Applications "$stage_dir/Applications"
 
-hdiutil create -volname IDAPastel -srcfolder "$stage_dir" -ov -format UDZO "$dmg_path"
+hdiutil create -volname IDAPastel -srcfolder "$stage_dir" -ov -format UDZO "$staged_dmg_path"
 (
-    cd "$output_dir"
+    cd "$work_dir"
     shasum -a 256 "$dmg_name" > "$dmg_name.sha256"
 )
+
+test -f "$staged_dmg_path"
+test -f "$staged_checksum_path"
+test ! -L "$staged_dmg_path"
+test ! -L "$staged_checksum_path"
+mv -f "$staged_checksum_path" "$checksum_path"
+mv -f "$staged_dmg_path" "$dmg_path"
+test ! -L "$dmg_path"
+test ! -L "$checksum_path"
+test -f "$dmg_path"
+test -f "$checksum_path"

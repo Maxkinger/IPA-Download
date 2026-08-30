@@ -4,6 +4,13 @@ set -euo pipefail
 dmg_path="${1:?usage: VerifyIDAPastelDMG.sh dist/IDAPastel.dmg}"
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 mount_dir=$(mktemp -d "${TMPDIR:-/tmp}/idapastel-mount.XXXXXX")
+
+cleanup() {
+    hdiutil detach "$mount_dir" -quiet >/dev/null 2>&1 || true
+    rmdir "$mount_dir" >/dev/null 2>&1 || true
+}
+trap cleanup EXIT
+
 checksum_path="$dmg_path.sha256"
 dmg_name="$(basename "$dmg_path")"
 
@@ -35,12 +42,6 @@ if test "$actual_digest" != "$expected_digest"; then
     echo "Checksum mismatch: $dmg_path" >&2
     exit 1
 fi
-
-cleanup() {
-    hdiutil detach "$mount_dir" -quiet >/dev/null 2>&1 || true
-    rmdir "$mount_dir" >/dev/null 2>&1 || true
-}
-trap cleanup EXIT
 
 hdiutil attach "$dmg_path" -readonly -nobrowse -mountpoint "$mount_dir" -quiet
 test -L "$mount_dir/Applications"

@@ -24,6 +24,17 @@ require_adhoc_signature() {
     fi
 }
 
+require_arm64_macho() {
+    local executable_path="$1"
+    local file_details
+
+    file_details=$(file -b "$executable_path")
+    if ! printf '%s\n' "$file_details" | grep -Eq '^Mach-O .* arm64$'; then
+        echo "Expected arm64 Mach-O executable: $executable_path" >&2
+        exit 1
+    fi
+}
+
 test -d "$app_path"
 test -f "$info_plist"
 
@@ -43,9 +54,9 @@ test -x "$main_executable"
 test -x "$node_executable"
 test -x "$sap_signer"
 
-file "$main_executable" | grep -q 'arm64'
-file "$node_executable" | grep -q 'arm64'
-file "$sap_signer" | grep -q 'arm64'
+require_arm64_macho "$main_executable"
+require_arm64_macho "$node_executable"
+require_arm64_macho "$sap_signer"
 codesign --verify --deep --strict --verbose=2 "$app_path"
 require_adhoc_signature "$app_path"
 require_adhoc_signature "$main_executable"
