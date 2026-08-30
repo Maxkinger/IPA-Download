@@ -1,0 +1,65 @@
+name: Build IDAPastel DMG
+
+on:
+  push:
+    branches: [tv]
+    tags: ['idapastel-v*']
+  pull_request:
+    branches: [tv]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: idapastel-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify runner
+        run: |
+          test "$(uname -m)" = "arm64"
+          xcodebuild -version | tee xcode-version.txt
+          grep -q '^Xcode 26\.' xcode-version.txt
+
+      - name: Install Node dependencies
+        run: npm ci --prefix NodeProject
+
+      - name: Test Node engine
+        run: npm test --prefix NodeProject
+
+      - name: Build IDAPastel
+        run: |
+          xcodebuild -project Pastel.xcodeproj \
+            -scheme IDAPastel \
+            -configuration Release \
+            -derivedDataPath "$RUNNER_TEMP/DerivedData" \
+            CODE_SIGN_IDENTITY=- \
+            build
+
+      - name: Verify and package
+        run: |
+          app="$RUNNER_TEMP/DerivedData/Build/Products/Release/IDAPastel.app"
+          Scripts/VerifyIDAPastelApp.sh "$app"
+          Scripts/BuildIDAPastelDMG.sh "$app" dist
+          dmg=$(find dist -name 'IDAPastel-*-arm64.dmg' -print -quit)
+          Scripts/VerifyIDAPastelDMG.sh "$dmg"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: IDAPastel-arm64
+          path: |
+            dist/*.dmg
+            dist/*.sha256
+          retention-days: 14
+
+      - name: Publish GitHub Release
+        if: startsWith(github.ref, 'refs/tags/idapastel-v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" dist/*.dmg dist/*.sha256 --generate-notes --title "IDAPastel $GITHUB_REF_NAME"
