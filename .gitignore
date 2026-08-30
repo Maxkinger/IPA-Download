@@ -19,6 +19,7 @@ yarn-error.log*
 
 # Distribution artifacts
 *.dmg
+*.sha256
 *.zip
 *.xcarchive
 
