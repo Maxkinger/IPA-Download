@@ -7,7 +7,14 @@ import Security
 import Sparkle
 import SwiftUI
 
-private let appDisplayName = "Pastel"
+private let appDisplayName = "IDAPastel"
+
+private enum IDAPastelIdentity {
+    static let bundleID = "com.idapastel.app"
+    static let deviceGUIDService = "com.idapastel.app.device-guid"
+    static let accountPasswordService = "com.idapastel.app.apple-account-password"
+    static let applicationSupportDirectory = "IDAPastel"
+}
 
 private func copyToPasteboard(_ string: String) {
     let value = string.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -206,7 +213,7 @@ enum CredentialVaultError: LocalizedError {
 }
 
 private enum DeviceGUIDStore {
-    private static let service = "com.allenmiao.ipahistorydownload.device-guid"
+    private static let service = IDAPastelIdentity.deviceGUIDService
     private static let account = "DeviceIdentifier"
     private static let hexCharacterSet = CharacterSet(charactersIn: "0123456789abcdefABCDEF")
 
@@ -240,7 +247,7 @@ private enum DeviceGUIDStore {
         let data = Data(normalized.utf8)
         let update: [String: Any] = [
             kSecValueData as String: data,
-            kSecAttrDescription as String: "Pastel StoreServices Device GUID"
+            kSecAttrDescription as String: "IDAPastel StoreServices Device GUID"
         ]
 
         let updateStatus = SecItemUpdate(baseQuery as CFDictionary, update as CFDictionary)
@@ -251,7 +258,7 @@ private enum DeviceGUIDStore {
 
         var addQuery = baseQuery
         addQuery[kSecValueData as String] = data
-        addQuery[kSecAttrDescription as String] = "Pastel StoreServices Device GUID"
+        addQuery[kSecAttrDescription as String] = "IDAPastel StoreServices Device GUID"
         addQuery[kSecAttrAccessible as String] = kSecAttrAccessibleWhenUnlockedThisDeviceOnly
         let addStatus = SecItemAdd(addQuery as CFDictionary, nil)
         guard addStatus == errSecSuccess else {
@@ -350,7 +357,7 @@ private struct StoredCredentialsMetadata: Codable {
 }
 
 private enum KeychainPasswordStore {
-    private static let service = "com.allenmiao.ipahistorydownload.apple-account-password"
+    private static let service = IDAPastelIdentity.accountPasswordService
 
     static func savePassword(_ password: String, for account: StoredAccount) throws {
         let passwordData = Data(password.utf8)
@@ -358,7 +365,7 @@ private enum KeychainPasswordStore {
         let update: [String: Any] = [
             kSecValueData as String: passwordData,
             kSecAttrLabel as String: account.displayLabel,
-            kSecAttrDescription as String: "Pastel Apple account password"
+            kSecAttrDescription as String: "IDAPastel Apple account password"
         ]
 
         let updateStatus = SecItemUpdate(query as CFDictionary, update as CFDictionary)
@@ -373,7 +380,7 @@ private enum KeychainPasswordStore {
         var addQuery = query
         addQuery[kSecValueData as String] = passwordData
         addQuery[kSecAttrLabel as String] = account.displayLabel
-        addQuery[kSecAttrDescription as String] = "Pastel Apple account password"
+        addQuery[kSecAttrDescription as String] = "IDAPastel Apple account password"
         addQuery[kSecAttrAccessible as String] = kSecAttrAccessibleWhenUnlockedThisDeviceOnly
 
         let addStatus = SecItemAdd(addQuery as CFDictionary, nil)
@@ -500,7 +507,7 @@ enum CredentialVault {
     private static var applicationSupportURL: URL {
         let baseURL = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
             ?? URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent("Library/Application Support")
-        return baseURL.appendingPathComponent(appDisplayName, isDirectory: true)
+        return baseURL.appendingPathComponent(IDAPastelIdentity.applicationSupportDirectory, isDirectory: true)
     }
 
     private static func prepareDirectory() throws {
@@ -620,7 +627,7 @@ private enum StoreSessionMigration {
         let baseURL = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
             ?? URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent("Library/Application Support")
         return baseURL
-            .appendingPathComponent(appDisplayName, isDirectory: true)
+            .appendingPathComponent(IDAPastelIdentity.applicationSupportDirectory, isDirectory: true)
             .appendingPathComponent("sessions", isDirectory: true)
     }
 }
@@ -677,7 +684,7 @@ struct NodeRuntime {
             let runtime = try locate()
             let fileManager = FileManager.default
             let tempURL = fileManager.temporaryDirectory
-                .appendingPathComponent("Pastel-\(UUID().uuidString)", isDirectory: true)
+                .appendingPathComponent("IDAPastel-\(UUID().uuidString)", isDirectory: true)
             try fileManager.createDirectory(at: tempURL, withIntermediateDirectories: true)
             defer { try? fileManager.removeItem(at: tempURL) }
 
@@ -1364,7 +1371,7 @@ final class AccountStore: ObservableObject {
         let baseURL = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
             ?? URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent("Library/Application Support")
         let sessionURL = baseURL
-            .appendingPathComponent(appDisplayName, isDirectory: true)
+            .appendingPathComponent(IDAPastelIdentity.applicationSupportDirectory, isDirectory: true)
             .appendingPathComponent("sessions", isDirectory: true)
         do {
             try FileManager.default.createDirectory(at: sessionURL, withIntermediateDirectories: true)
@@ -1539,7 +1546,7 @@ final class DownloadManager: ObservableObject {
         let baseURL = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
             ?? URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent("Library/Application Support")
         let sessionURL = baseURL
-            .appendingPathComponent(appDisplayName, isDirectory: true)
+            .appendingPathComponent(IDAPastelIdentity.applicationSupportDirectory, isDirectory: true)
             .appendingPathComponent("sessions", isDirectory: true)
         do {
             try FileManager.default.createDirectory(at: sessionURL, withIntermediateDirectories: true)
@@ -4632,7 +4639,11 @@ struct ContentView: View {
         didLoadCredentials = true
 
         if downloadDir.isEmpty {
-            downloadDir = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first?.path ?? NSHomeDirectory()
+            let downloads = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first
+                ?? URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent("Downloads")
+            let idapastel = downloads.appendingPathComponent("IDAPastel", isDirectory: true)
+            try? FileManager.default.createDirectory(at: idapastel, withIntermediateDirectories: true)
+            downloadDir = idapastel.path
         }
 
         downloadAppID = ""
@@ -8126,7 +8137,6 @@ struct LanguageSettingsView: View {
 }
 
 struct AboutSettingsView: View {
-    @EnvironmentObject private var updateManager: AppUpdateManager
     private var appVersion: String {
         Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "26.7"
     }
@@ -8177,12 +8187,6 @@ struct AboutSettingsView: View {
                 .font(.callout)
                 .padding(.horizontal, 18)
                 .padding(.vertical, 10)
-
-                SettingsGroupDivider()
-
-                CheckForUpdatesSettingsRow(updater: updateManager.updater)
-
-                SettingsGroupDivider()
 
                 SettingsLinkRow(title: String(localized: "制作人"),
                                 subtitle: "EEliberto",
@@ -8264,95 +8268,13 @@ private struct SettingsLinkRow: View {
     }
 }
 
-private struct SettingsActionRow: View {
-    let title: String
-    let subtitle: String
-    let systemImage: String
-    var isEnabled = true
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            HStack(spacing: 12) {
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(title)
-                        .foregroundStyle(.primary)
-                    Text(subtitle)
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                }
-
-                Spacer()
-
-                Image(systemName: systemImage)
-                    .foregroundStyle(.tertiary)
-            }
-            .contentShape(Rectangle())
-            .padding(.horizontal, 18)
-            .padding(.vertical, 10)
-        }
-        .buttonStyle(.plain)
-        .disabled(!isEnabled)
-    }
-}
-
 final class AppUpdateManager: ObservableObject {
     let updaterController: SPUStandardUpdaterController
 
     init() {
-        updaterController = SPUStandardUpdaterController(startingUpdater: true,
+        updaterController = SPUStandardUpdaterController(startingUpdater: false,
                                                          updaterDelegate: nil,
                                                          userDriverDelegate: nil)
-    }
-
-    var updater: SPUUpdater {
-        updaterController.updater
-    }
-}
-
-final class CheckForUpdatesViewModel: ObservableObject {
-    @Published var canCheckForUpdates = false
-
-    init(updater: SPUUpdater) {
-        updater.publisher(for: \.canCheckForUpdates)
-            .receive(on: RunLoop.main)
-            .assign(to: &$canCheckForUpdates)
-    }
-}
-
-private struct CheckForUpdatesMenuItem: View {
-    @ObservedObject private var viewModel: CheckForUpdatesViewModel
-    private let updater: SPUUpdater
-
-    init(updater: SPUUpdater) {
-        self.updater = updater
-        viewModel = CheckForUpdatesViewModel(updater: updater)
-    }
-
-    var body: some View {
-        Button(String(localized: "检查更新…")) {
-            updater.checkForUpdates()
-        }
-        .disabled(!viewModel.canCheckForUpdates)
-    }
-}
-
-private struct CheckForUpdatesSettingsRow: View {
-    @ObservedObject private var viewModel: CheckForUpdatesViewModel
-    private let updater: SPUUpdater
-
-    init(updater: SPUUpdater) {
-        self.updater = updater
-        viewModel = CheckForUpdatesViewModel(updater: updater)
-    }
-
-    var body: some View {
-        SettingsActionRow(title: String(localized: "检查更新"),
-                          subtitle: String(localized: "从 GitHub 检查 Pastel 新版本。"),
-                          systemImage: "arrow.clockwise",
-                          isEnabled: viewModel.canCheckForUpdates) {
-            updater.checkForUpdates()
-        }
     }
 }
 
@@ -8433,7 +8355,6 @@ private final class KeyboardShortcutState {
 
 struct PastelSettingsCommands: Commands {
     @Environment(\.openWindow) private var openWindow
-    let updateManager: AppUpdateManager
 
     var body: some Commands {
         CommandGroup(replacing: .appSettings) {
@@ -8448,10 +8369,6 @@ struct PastelSettingsCommands: Commands {
                 NotificationCenter.default.post(name: .pastelRefreshActivePanel, object: nil)
             }
             .keyboardShortcut("r", modifiers: .command)
-        }
-
-        CommandGroup(after: .appInfo) {
-            CheckForUpdatesMenuItem(updater: updateManager.updater)
         }
     }
 }
@@ -8476,7 +8393,7 @@ struct PastelApp: App {
         .windowResizability(.contentMinSize)
         .defaultSize(width: 1240, height: 820)
         .commands {
-            PastelSettingsCommands(updateManager: updateManager)
+            PastelSettingsCommands()
         }
 
         Window(String(localized: "设置"), id: "settings") {

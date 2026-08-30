@@ -19,12 +19,12 @@ const ACCEPTED_SESSION_FLOW_VERSIONS = new Set([SESSION_FLOW_VERSION]);
 function appSupportDir() {
     if (process.env.IPA_SESSION_DIR) return process.env.IPA_SESSION_DIR;
     if (process.platform === 'darwin') {
-        return path.join(os.homedir(), 'Library', 'Application Support', 'IPA Download', 'sessions');
+        return path.join(os.homedir(), 'Library', 'Application Support', 'IDAPastel', 'sessions');
     }
     if (process.platform === 'win32') {
-        return path.join(process.env.APPDATA || os.homedir(), 'IPA Download', 'sessions');
+        return path.join(process.env.APPDATA || os.homedir(), 'IDAPastel', 'sessions');
     }
-    return path.join(process.env.XDG_CONFIG_HOME || path.join(os.homedir(), '.config'), 'IPA Download', 'sessions');
+    return path.join(process.env.XDG_CONFIG_HOME || path.join(os.homedir(), '.config'), 'IDAPastel', 'sessions');
 }
 
 function sessionFileFor(email) {
