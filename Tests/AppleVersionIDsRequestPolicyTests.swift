@@ -93,8 +93,22 @@ struct AppleVersionIDsRequestPolicyTests {
                 for: tvResponse,
                 request: tvRequest,
                 current: tvRequest
-            ) == .apply(visibleVersionIDs: ["900"], isAppleTV: true),
-            "a matching Apple TV response exposes only its latest ID"
+            ) == .apply(visibleVersionIDs: ["900", "800", "700"], isAppleTV: true),
+            "a matching Apple TV response keeps all trusted IDs in reverse order"
+        )
+
+        expect(
+            AppleVersionIDsRequestPolicy.decision(
+                for: AppleVersionIDsResponse(
+                    appID: "42",
+                    platform: "appletv",
+                    latestVersionID: "900",
+                    versionIDs: []
+                ),
+                request: tvRequest,
+                current: tvRequest
+            ) == .apply(visibleVersionIDs: [], isAppleTV: true),
+            "a matching Apple TV response preserves an empty trusted ID list"
         )
 
         var state = AppleVersionIDsRequestState()
