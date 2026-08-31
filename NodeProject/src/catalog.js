@@ -1,4 +1,7 @@
 import axios from 'axios';
+import {mkdir, readFile, rename, unlink, writeFile} from 'node:fs/promises';
+import {homedir, platform as operatingSystem} from 'node:os';
+import {dirname, join} from 'node:path';
 import {t} from './i18n.js';
 import {buildTVDiscoverURL, extractTVRankingAppIds} from './tvos-ranking.js';
 import {
@@ -19,10 +22,72 @@ const catalogClient = axios.create({
 const TV_RANKING_CACHE_TTL_MS = 10 * 60 * 1000;
 const TV_RANKING_CACHE_MAX_COUNTRIES = 20;
 const tvRankingCache = new Map();
+let tvRankingCacheWriteSequence = 0;
 
 function asText(value) {
     if (value === undefined || value === null) return '';
     return String(value).trim();
+}
+
+function defaultTVRankingCachePath() {
+    const configurationDirectory = operatingSystem() === 'darwin'
+        ? join(homedir(), 'Library', 'Application Support')
+        : process.env.XDG_CONFIG_HOME || join(homedir(), '.config');
+    return join(configurationDirectory, 'IDAPastel', 'tv-ranking-cache.json');
+}
+
+function isUsableTVRankingCacheEntry(entry, now = Date.now()) {
+    return Boolean(
+        entry
+        && Number.isFinite(entry.expiresAt)
+        && entry.expiresAt > now
+        && Array.isArray(entry.apps),
+    );
+}
+
+function tvRankingCacheKey(cachePath, country) {
+    return `${cachePath}\u0000${country}`;
+}
+
+async function readTVRankingCacheEntry(cachePath, country) {
+    try {
+        const parsed = JSON.parse(await readFile(cachePath, 'utf8'));
+        const entry = parsed?.countries?.[country];
+        if (!isUsableTVRankingCacheEntry(entry)) return null;
+        return entry;
+    } catch {
+        return null;
+    }
+}
+
+async function writeTVRankingCacheEntry(cachePath, country, entry) {
+    const now = Date.now();
+    let countries = {};
+
+    try {
+        const parsed = JSON.parse(await readFile(cachePath, 'utf8'));
+        if (parsed?.countries && typeof parsed.countries === 'object') countries = parsed.countries;
+    } catch {
+        // A missing or corrupt cache is safely replaced below.
+    }
+
+    const validEntries = Object.entries(countries)
+        .filter(([storedCountry, candidate]) => storedCountry !== country && isUsableTVRankingCacheEntry(candidate, now))
+        .sort(([, left], [, right]) => left.expiresAt - right.expiresAt);
+    while (validEntries.length >= TV_RANKING_CACHE_MAX_COUNTRIES) validEntries.shift();
+    const payload = {
+        version: 1,
+        countries: Object.fromEntries([...validEntries, [country, entry]]),
+    };
+    const temporaryPath = `${cachePath}.${process.pid}.${++tvRankingCacheWriteSequence}.tmp`;
+
+    try {
+        await mkdir(dirname(cachePath), {recursive: true});
+        await writeFile(temporaryPath, JSON.stringify(payload), {encoding: 'utf8', mode: 0o600});
+        await rename(temporaryPath, cachePath);
+    } catch {
+        await unlink(temporaryPath).catch(() => {});
+    }
 }
 
 function firstLine(value) {
@@ -351,9 +416,16 @@ async function fetchRankedRSSApps(country, platform = 'iphone') {
     return apps;
 }
 
-async function fetchFeaturedAppleTVApps(country, client) {
-    const cached = tvRankingCache.get(country);
-    if (cached && cached.expiresAt > Date.now()) return cached.apps;
+async function fetchFeaturedAppleTVApps(country, client, cachePath = defaultTVRankingCachePath()) {
+    const cacheKey = tvRankingCacheKey(cachePath, country);
+    const cached = tvRankingCache.get(cacheKey);
+    if (isUsableTVRankingCacheEntry(cached)) return cached.apps;
+
+    const restored = await readTVRankingCacheEntry(cachePath, country);
+    if (restored) {
+        tvRankingCache.set(cacheKey, restored);
+        return restored.apps;
+    }
 
     const {data} = await client.get(buildTVDiscoverURL(country), {
         headers: {
@@ -362,22 +434,27 @@ async function fetchFeaturedAppleTVApps(country, client) {
     });
     const ids = extractTVRankingAppIds(data, 200);
     const apps = await lookupAppsByIds(ids, {country, platform: 'appletv', client});
+    if (!apps.length) return apps;
 
     if (tvRankingCache.size >= TV_RANKING_CACHE_MAX_COUNTRIES) {
         tvRankingCache.delete(tvRankingCache.keys().next().value);
     }
-    tvRankingCache.set(country, {apps, expiresAt: Date.now() + TV_RANKING_CACHE_TTL_MS});
+    const entry = {apps, expiresAt: Date.now() + TV_RANKING_CACHE_TTL_MS};
+    tvRankingCache.set(cacheKey, entry);
+    await writeTVRankingCacheEntry(cachePath, country, entry);
     return apps;
 }
 
-async function featuredApps({country = 'cn', platform = 'iphone', limit = 30, offset = 0, client = catalogClient} = {}) {
+async function featuredApps({
+    country = 'cn', platform = 'iphone', limit = 30, offset = 0, client = catalogClient, cachePath,
+} = {}) {
     const cleanCountry = asText(country).toLowerCase() || 'cn';
     const cleanPlatform = normalizeAppPlatform(platform);
     const cleanLimit = Math.max(1, Math.min(Number(limit) || 30, 200));
     const cleanOffset = Math.max(0, Number(offset) || 0);
 
     if (cleanPlatform === 'appletv') {
-        const apps = await fetchFeaturedAppleTVApps(cleanCountry, client);
+        const apps = await fetchFeaturedAppleTVApps(cleanCountry, client, cachePath || defaultTVRankingCachePath());
         return {
             queryType: 'featured',
             count: apps.length,
