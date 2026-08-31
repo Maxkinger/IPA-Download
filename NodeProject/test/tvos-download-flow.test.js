@@ -4,6 +4,7 @@ import {existsSync, mkdtempSync, rmSync, writeFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {Ipa} from '../src/ipa.js';
+import {Store} from '../src/client.js';
 import {t} from '../src/i18n.js';
 
 const credentials = {APPLE_ID: 'user@example.com', PASSWORD: 'secret', CODE: ''};
@@ -16,6 +17,56 @@ test('resolves only an implicit Apple TV version', async () => {
     assert.equal(await app.resolveAppVersionID('42', '', 'appletv'), '123456');
     assert.equal(await app.resolveAppVersionID('42', '777', 'appletv'), '777');
     assert.equal(await app.resolveAppVersionID('42', '', 'iphone'), '');
+});
+
+test('accepts an Apple TV version family anchored by the resolved latest version', async () => {
+    const originalAppInfo = Store.AppInfo;
+    Store.AppInfo = async () => ({
+        songList: [{
+            metadata: {
+                bundleDisplayName: 'Apple TV Fixture',
+                bundleShortVersionString: '3.0',
+                softwareVersionExternalIdentifiers: [700, '800', '900', '900'],
+            },
+        }],
+    });
+    try {
+        const app = new Ipa(credentials, {lookupTVVersion: async () => '900'});
+        app.user = {};
+        app.persistCurrentSession = async () => {};
+
+        const result = await app.listVersionIds('42', 'appletv');
+
+        assert.equal(result.latestVersionId, '900');
+        assert.deepEqual(result.versionIds, ['700', '800', '900']);
+        assert.equal(result.platform, 'appletv');
+    } finally {
+        Store.AppInfo = originalAppInfo;
+    }
+});
+
+test('falls back to the resolved Apple TV version for an unrelated version family', async () => {
+    const originalAppInfo = Store.AppInfo;
+    Store.AppInfo = async () => ({
+        songList: [{
+            metadata: {
+                bundleDisplayName: 'Apple TV Fixture',
+                bundleShortVersionString: '3.0',
+                softwareVersionExternalIdentifiers: [100, '200'],
+            },
+        }],
+    });
+    try {
+        const app = new Ipa(credentials, {lookupTVVersion: async () => '900'});
+        app.user = {};
+        app.persistCurrentSession = async () => {};
+
+        const result = await app.listVersionIds('42', 'appletv');
+
+        assert.deepEqual(result.versionIds, ['900']);
+    } finally {
+        Store.AppInfo = originalAppInfo;
+    }
 });
 
 test('removes a package rejected by Apple TV validation', async () => {

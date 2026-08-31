@@ -287,12 +287,18 @@ export class Ipa {
             ? meta.softwareVersionExternalIdentifiers.map(String)
             : [];
         if (appleTV) {
+            const normalizedTVIDs = [...new Set(
+                ids.map(id => String(id).trim()).filter(Boolean)
+            )];
+            const versionIds = normalizedTVIDs.includes(String(resolvedVersionID))
+                ? normalizedTVIDs
+                : [String(resolvedVersionID)];
             return {
                 appId: String(APPID),
                 name: meta.bundleDisplayName || 'UnknownApp',
                 latestVersion: meta.bundleShortVersionString || '',
                 latestVersionId: resolvedVersionID,
-                versionIds: [resolvedVersionID],
+                versionIds,
                 platform: 'appletv',
             };
         }
