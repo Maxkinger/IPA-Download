@@ -43,6 +43,16 @@ jobs:
             -o "$RUNNER_TEMP/DownloadedPackagePlatformTests"
           "$RUNNER_TEMP/DownloadedPackagePlatformTests"
 
+      - name: Test Apple version request policy
+        run: |
+          xcrun swiftc \
+            -parse-as-library \
+            -module-cache-path "$RUNNER_TEMP/idapastel-swift-module-cache" \
+            Pastel/AppleVersionIDsRequestPolicy.swift \
+            Tests/AppleVersionIDsRequestPolicyTests.swift \
+            -o "$RUNNER_TEMP/AppleVersionIDsRequestPolicyTests"
+          "$RUNNER_TEMP/AppleVersionIDsRequestPolicyTests"
+
       - name: Test workflow asset selection
         run: ruby Scripts/TestIDAPastelWorkflowAssets.rb
 

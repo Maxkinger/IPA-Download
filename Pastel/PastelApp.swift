@@ -1418,15 +1418,16 @@ final class DownloadManager: ObservableObject {
         jobs.values.first { processes[$0.id] != nil } ?? jobs.values.first
     }
 
-    func start(id: String, label: String, config: RunConfig) {
-        guard processes[id] == nil else { return }
+    @discardableResult
+    func start(id: String, label: String, config: RunConfig) -> Bool {
+        guard processes[id] == nil else { return false }
         configs[id] = config
 
         let runtime: (projectURL: URL, mainURL: URL, nodeURL: URL)
         do { runtime = try NodeRuntime.locate() }
         catch {
             jobs[id] = Job(id: id, label: label, platform: config.platform, status: .failed, log: error.localizedDescription + "\n", progress: nil)
-            return
+            return true
         }
 
         jobs[id] = Job(id: id, label: label, platform: config.platform, log: String(localized: "任务已开始。") + "\n")
@@ -1484,6 +1485,7 @@ final class DownloadManager: ObservableObject {
             j.log += String(localized: "无法启动内置 Node：\(error.localizedDescription)") + "\n"
             jobs[id] = j
         }
+        return true
     }
 
     func submitCode(id: String, code: String) {
@@ -2144,6 +2146,7 @@ struct ContentView: View {
     @State private var manualLatestDownloadedPath: String?
     @State private var manualLatestDownloadedJobID: String?
     @State private var appleVersionFetchNeedsAcquisition = false
+    @State private var appleVersionIDsRequestState = AppleVersionIDsRequestState()
     @State private var storefrontReloadTask: Task<Void, Never>?
     @State private var downloadLibraryRefreshTask: Task<Void, Never>?
     @State private var iconPathsBeingLoaded: Set<String> = []
@@ -2158,8 +2161,14 @@ struct ContentView: View {
     @AppStorage("catalogSearchPlatform") private var selectedSearchPlatformID = AppSearchPlatform.iphone.rawValue
     @AppStorage(AppLanguage.overrideKey) private var languageOverride = ""
 
+    private var currentAppleVersionIDsRequestContext: AppleVersionIDsRequestContext {
+        AppleVersionIDsRequestContext(appID: activeAppID, platform: selectedSearchPlatform.rawValue)
+    }
+
     private var versionListLoading: Bool {
-        catalog.isLoadingVersions || downloads.isRunning(Self.versionIDsFetchJobKey)
+        catalog.isLoadingVersions
+            || (downloads.isRunning(Self.versionIDsFetchJobKey)
+                && appleVersionIDsRequestState.isLoading(for: currentAppleVersionIDsRequestContext))
     }
 
     private var centeredSpinner: some View {
@@ -2286,7 +2295,9 @@ struct ContentView: View {
         .onChange(of: downloads.job(Self.versionIDsFetchJobKey)?.status) { _, status in
             guard let job = downloads.job(Self.versionIDsFetchJobKey) else { return }
             if status == .done || (status == .failed && !job.needsCode) {
-                parseFetchedVersionIDs(from: job.log)
+                if let request = appleVersionIDsRequestState.takeCompletedRequest() {
+                    parseFetchedVersionIDs(from: job.log, request: request)
+                }
                 downloads.remove(id: Self.versionIDsFetchJobKey)
             }
         }
@@ -5192,19 +5203,41 @@ struct ContentView: View {
             saveMessage = String(localized: "请先登录 Apple 账户。"); showSettings(); return
         }
         guard !appID.isEmpty else { return }
+        let request = AppleVersionIDsRequestContext(
+            appID: appID,
+            platform: selectedSearchPlatform.rawValue
+        )
         selectedVersion = nil
         selectedVersionIDs.removeAll()
         lastSelectedVersionID = nil
         catalog.selectedVersionID = nil
         catalog.versionResults = []
         appleVersionFetchNeedsAcquisition = false
-        catalog.versionStatus = String(localized: "正在从 Apple 获取版本…")
+        guard appleVersionIDsRequestState.activeRequest == nil else {
+            catalog.versionStatus = unavailableAppleVersionStatus(for: request)
+            return
+        }
         let config = RunConfig(appleAccount: acct, password: pwd, code: "",
                                appID: appID, versionID: "", downloadDir: "", listVersionIDs: true,
                                appIsFree: appIsFreeFlag(), appCountry: selectedCountryCode,
                                allowAppAcquisition: allowAppAcquisition,
-                               platform: selectedSearchPlatform.rawValue)
-        downloads.start(id: Self.versionIDsFetchJobKey, label: String(localized: "获取版本列表"), config: config)
+                               platform: request.platform)
+        let jobStarted = downloads.start(
+            id: Self.versionIDsFetchJobKey,
+            label: String(localized: "获取版本列表"),
+            config: config
+        )
+        guard appleVersionIDsRequestState.registerStart(of: request, jobStarted: jobStarted) else {
+            catalog.versionStatus = unavailableAppleVersionStatus(for: request)
+            return
+        }
+        catalog.versionStatus = String(localized: "正在从 Apple 获取版本…")
+    }
+
+    private func unavailableAppleVersionStatus(for request: AppleVersionIDsRequestContext) -> String {
+        request.isAppleTV
+            ? String(localized: "Apple TV 目前仅提供 Apple 来源的最新版本或手动版本 ID。")
+            : String(localized: "未能从 Apple 获取版本，请改用其他来源。")
     }
 
     private func appIsFreeFlag() -> String {
@@ -5272,7 +5305,12 @@ struct ContentView: View {
         }
     }
 
-    private func parseFetchedVersionIDs(from log: String) {
+    private func parseFetchedVersionIDs(
+        from log: String,
+        request: AppleVersionIDsRequestContext
+    ) {
+        let current = currentAppleVersionIDsRequestContext
+        guard request == current else { return }
         let lines = log.split(separator: "\n").map(String.init)
         guard let line = lines.first(where: { $0.contains("\"versionIds\"") }),
               let data = line.data(using: .utf8),
@@ -5289,6 +5327,29 @@ struct ContentView: View {
             }
             return
         }
+        let response = AppleVersionIDsResponse(
+            appID: obj["appId"] as? String ?? "",
+            platform: obj["platform"] as? String,
+            latestVersionID: obj["latestVersionId"] as? String ?? "",
+            versionIDs: ids
+        )
+        let visibleIDs: [String]
+        let isAppleTV: Bool
+        switch AppleVersionIDsRequestPolicy.decision(
+            for: response,
+            request: request,
+            current: current
+        ) {
+        case .stale:
+            catalog.versionResults = []
+            selectedVersionIDs.removeAll()
+            lastSelectedVersionID = nil
+            catalog.versionStatus = unavailableAppleVersionStatus(for: request)
+            return
+        case let .apply(versionIDs, responseIsAppleTV):
+            visibleIDs = versionIDs
+            isAppleTV = responseIsAppleTV
+        }
         if (obj["requiresAcquisition"] as? Bool) == true {
             catalog.versionResults = []
             selectedVersionIDs.removeAll()
@@ -5297,14 +5358,6 @@ struct ContentView: View {
             catalog.versionStatus = String(localized: "此 Apple 账户未拥有此 App，是否从 Apple 获取此 App？")
             return
         }
-        let visibleIDs: [String]
-        if activeAppIsAppleTV {
-            let latestVersionID = (obj["latestVersionId"] as? String)?
-                .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-            visibleIDs = latestVersionID.isEmpty ? [] : [latestVersionID]
-        } else {
-            visibleIDs = Array(ids.reversed())
-        }
         let records = visibleIDs.map { id in
             VersionRecord(id: "apple-\(id)", version: "—", versionId: id, date: "", size: "", source: "Apple")
         }
@@ -5312,7 +5365,7 @@ struct ContentView: View {
         selectedVersionIDs.removeAll()
         lastSelectedVersionID = nil
         catalog.versionResults = records
-        catalog.versionStatus = activeAppIsAppleTV
+        catalog.versionStatus = isAppleTV
             ? String(localized: "Apple TV 目前仅提供 Apple 来源的最新版本或手动版本 ID。")
             : String(localized: "已从 Apple 元数据获取 \(records.count) 个版本 ID。")
     }
