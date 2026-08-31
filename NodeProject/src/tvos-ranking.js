@@ -6,7 +6,7 @@ function cleanLimit(limit) {
 function idsFromShelf(html, chart, label, limit) {
     const sectionPattern = /<section\b([^>]*)>([\s\S]*?)<\/section>/gi;
     const idPattern = /(?:https?:\/\/apps\.apple\.com\/[^"'\s>]+)?\/app\/[^"'?#\s>]*\/id(\d+)(?=[?"'#\s>]|$)/gi;
-    const chartLinkPattern = new RegExp(`(?:https?:\\/\\/apps\\.apple\\.com)?\\/[^"'\\s>]*tv\\/charts\\/36\\?chart=${chart}(?=[&"'#\\s>]|$)`, 'i');
+    const chartLinkPattern = new RegExp(`(?:https?:\\/\\/apps\\.apple\\.com)?\\/[a-z]{2}\\/tv\\/charts\\/36\\?(?:[^"'#\\s>]*&)?chart=${chart}(?=[&"'#\\s>]|$)`, 'i');
     const ids = [];
     const seen = new Set();
     let section;

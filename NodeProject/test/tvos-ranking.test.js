@@ -28,6 +28,21 @@ const localizedRankingHTML = `
     <a href="https://apps.apple.com/hk/app/paid-one/id666?platform=tv">one</a>
   </section>`;
 
+const japaneseRankingHTML = `
+  <section data-test-id="shelf-wrapper" aria-label="無料Appランキング">
+    <a href="https://apps.apple.com/jp/tv/charts/36?chart=top-free&platform=tv">すべて見る</a>
+    <a href="https://apps.apple.com/jp/app/free-one/id777?platform=tv">one</a>
+  </section>
+  <section data-test-id="shelf-wrapper" aria-label="有料Appランキング">
+    <a href="/jp/tv/charts/36?chart=top-paid&platform=tv">すべて見る</a>
+    <a href="https://apps.apple.com/jp/app/paid-one/id888?platform=tv">one</a>
+  </section>`;
+
+const misleadingAppLinkHTML = `
+  <section data-test-id="shelf-wrapper" aria-label="無料Appランキング">
+    <a href="/us/app/foo/id999?next=/tv/charts/36?chart=top-free">not a chart</a>
+  </section>`;
+
 test('extracts top free and paid IDs in shelf order', () => {
     assert.deepEqual(extractTVChartAppIds(rankingHTML, 'top-free', 10), ['111', '333']);
     assert.deepEqual(extractTVChartAppIds(rankingHTML, 'top-paid', 10), ['333', '222']);
@@ -45,4 +60,13 @@ test('builds the official discover URL and limits IDs', () => {
 test('extracts localized shelves identified by official chart links', () => {
     assert.deepEqual(extractTVChartAppIds(localizedRankingHTML, 'top-free', 10), ['444', '555']);
     assert.deepEqual(extractTVChartAppIds(localizedRankingHTML, 'top-paid', 10), ['666']);
+});
+
+test('extracts Japanese localized shelves identified by official chart links', () => {
+    assert.deepEqual(extractTVChartAppIds(japaneseRankingHTML, 'top-free', 10), ['777']);
+    assert.deepEqual(extractTVChartAppIds(japaneseRankingHTML, 'top-paid', 10), ['888']);
+});
+
+test('does not treat chart text in an app link query as a chart shelf', () => {
+    assert.deepEqual(extractTVChartAppIds(misleadingAppLinkHTML, 'top-free', 10), []);
 });

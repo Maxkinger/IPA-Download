@@ -67,3 +67,53 @@ client coverage rather than a real Apple request.
   path in the future. The English language parameter and link-based fallback
   cover the current expected variants without widening parsing to arbitrary
   app links.
+
+## Review fix round 1
+
+### RED
+
+Command:
+
+```sh
+cd NodeProject && node --test test/tvos-ranking.test.js
+```
+
+Result: 4 passed, 1 failed. The new negative fixture contained only
+`/us/app/foo/id999?next=/tv/charts/36?chart=top-free`; the previous broad
+pattern incorrectly selected that shelf and returned `['999']` instead of
+`[]`.
+
+### GREEN
+
+Focused command:
+
+```sh
+cd NodeProject && node --test test/tvos-ranking.test.js test/catalog.test.js
+```
+
+Result: 14 passed, 0 failed.
+
+Full command:
+
+```sh
+cd NodeProject && npm test
+```
+
+Result: 43 passed, 0 failed.
+
+### Changes and self-review
+
+- Restricted chart-link matching to the official `/[a-z]{2}/tv/charts/36`
+  path, optionally after the `apps.apple.com` origin, with `chart` as a query
+  parameter. This cannot cross an `/app/` path into a query value.
+- Added the ordinary-app-query negative test and Japanese localized free/paid
+  shelf coverage. Both relative and absolute official chart links remain
+  covered.
+- `git diff --check` is clean. Tests use static HTML fixtures or injected
+  clients; no real network request was made.
+
+### Concerns
+
+- The parser intentionally assumes Apple storefront paths use a two-letter
+  country segment. A future chart URL shape or nonstandard storefront segment
+  would need an explicit compatibility update.
