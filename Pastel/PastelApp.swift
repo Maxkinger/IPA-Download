@@ -2945,7 +2945,7 @@ struct ContentView: View {
                                 systemImage: activeAppIsAppleTV ? "appletv" : "vision.pro",
                                 title: activeAppIsAppleTV ? "Apple TV" : String(localized: "Apple Vision Pro"),
                                 message: activeAppIsAppleTV
-                                    ? String(localized: "Apple TV 目前仅提供 Apple 来源的最新版本或手动版本 ID。")
+                                    ? String(localized: "Apple TV 的 App 历史版本目前仅在 Apple 来源提供，其他来源并未收录。")
                                     : String(localized: "Apple Vision Pro 的 App 历史版本目前仅在 Apple 来源提供，其他来源并未收录。"),
                                 fills: false
                             )
@@ -3353,7 +3353,7 @@ struct ContentView: View {
             catalog.historyProvider = "apple"
             catalog.versionResults = []
             catalog.versionStatus = activeAppIsAppleTV
-                ? String(localized: "Apple TV 目前仅提供 Apple 来源的最新版本或手动版本 ID。")
+                ? String(localized: "Apple TV 的 App 历史版本目前仅在 Apple 来源提供，其他来源并未收录。")
                 : String(localized: "Apple Vision Pro 的 App 历史版本目前仅在 Apple 来源提供，其他来源并未收录。")
             return
         }
@@ -4940,7 +4940,6 @@ struct ContentView: View {
     }
 
     private func downloadSelectedVersions() {
-        guard !activeAppIsAppleTV else { return }
         let records = catalog.versionResults.filter { selectedVersionIDs.contains($0.id) }
         guard !records.isEmpty else { return }
         for record in records {
@@ -4953,7 +4952,7 @@ struct ContentView: View {
     }
 
     private func showsBatchDownloadMenu(for record: VersionRecord) -> Bool {
-        !activeAppIsAppleTV && selectedVersionIDs.count > 1 && selectedVersionIDs.contains(record.id)
+        selectedVersionIDs.count > 1 && selectedVersionIDs.contains(record.id)
     }
 
     private func handleSelectAllShortcut() {
@@ -4991,9 +4990,8 @@ struct ContentView: View {
 
     private func selectAllVersionRows() {
         guard !catalog.versionResults.isEmpty else { return }
-        let selectableResults = activeAppIsAppleTV ? Array(catalog.versionResults.prefix(1)) : catalog.versionResults
-        selectedVersionIDs = Set(selectableResults.map(\.id))
-        if let first = selectableResults.first {
+        selectedVersionIDs = Set(catalog.versionResults.map(\.id))
+        if let first = catalog.versionResults.first {
             selectVersion(first, updateSelection: false)
         }
     }
@@ -5242,10 +5240,8 @@ struct ContentView: View {
         catalog.versionStatus = String(localized: "正在从 Apple 获取版本…")
     }
 
-    private func unavailableAppleVersionStatus(for request: AppleVersionIDsRequestContext) -> String {
-        request.isAppleTV
-            ? String(localized: "Apple TV 目前仅提供 Apple 来源的最新版本或手动版本 ID。")
-            : String(localized: "未能从 Apple 获取版本，请改用其他来源。")
+    private func unavailableAppleVersionStatus(for _: AppleVersionIDsRequestContext) -> String {
+        String(localized: "未能从 Apple 获取版本，请改用其他来源。")
     }
 
     private func appIsFreeFlag() -> String {
@@ -5342,7 +5338,6 @@ struct ContentView: View {
             versionIDs: ids
         )
         let visibleIDs: [String]
-        let isAppleTV: Bool
         switch AppleVersionIDsRequestPolicy.decision(
             for: response,
             request: request,
@@ -5354,9 +5349,8 @@ struct ContentView: View {
             lastSelectedVersionID = nil
             catalog.versionStatus = unavailableAppleVersionStatus(for: request)
             return
-        case let .apply(versionIDs, responseIsAppleTV):
+        case let .apply(versionIDs, _):
             visibleIDs = versionIDs
-            isAppleTV = responseIsAppleTV
         }
         if (obj["requiresAcquisition"] as? Bool) == true {
             catalog.versionResults = []
@@ -5373,9 +5367,7 @@ struct ContentView: View {
         selectedVersionIDs.removeAll()
         lastSelectedVersionID = nil
         catalog.versionResults = records
-        catalog.versionStatus = isAppleTV
-            ? String(localized: "Apple TV 目前仅提供 Apple 来源的最新版本或手动版本 ID。")
-            : String(localized: "已从 Apple 元数据获取 \(records.count) 个版本 ID。")
+        catalog.versionStatus = String(localized: "已从 Apple 元数据获取 \(records.count) 个版本 ID。")
     }
 
     private func refreshDownloadedFiles() {
@@ -5834,7 +5826,7 @@ struct ContentView: View {
             lastSelectedVersionID = nil
             catalog.versionResults = []
             catalog.versionStatus = activeAppIsAppleTV
-                ? String(localized: "Apple TV 目前仅提供 Apple 来源的最新版本或手动版本 ID。")
+                ? String(localized: "Apple TV 的 App 历史版本目前仅在 Apple 来源提供，其他来源并未收录。")
                 : String(localized: "Apple Vision Pro 的 App 历史版本目前仅在 Apple 来源提供，其他来源并未收录。")
             return
         }

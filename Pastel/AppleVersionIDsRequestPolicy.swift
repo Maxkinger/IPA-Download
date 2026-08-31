@@ -49,9 +49,8 @@ enum AppleVersionIDsRequestPolicy {
         }
 
         if request.isAppleTV {
-            let latestVersionID = response.latestVersionID.trimmingCharacters(in: .whitespacesAndNewlines)
             return .apply(
-                visibleVersionIDs: latestVersionID.isEmpty ? [] : [latestVersionID],
+                visibleVersionIDs: Array(response.versionIDs.reversed()),
                 isAppleTV: true
             )
         }

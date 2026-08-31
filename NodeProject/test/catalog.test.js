@@ -298,3 +298,34 @@ test('downloaded app navigation routes storefront changes through the platform a
     assert.doesNotMatch(searchForApp, /\bselectedCountryCode\s*=/);
     assert.doesNotMatch(searchForApp, /\bcatalog\.country\s*=/);
 });
+
+test('Apple TV history exposes every trusted version ID and permits multi-version downloads', async () => {
+    const policy = await readFile(new URL('../../Pastel/AppleVersionIDsRequestPolicy.swift', import.meta.url), 'utf8');
+    const app = await readFile(new URL('../../Pastel/PastelApp.swift', import.meta.url), 'utf8');
+    const tvPolicyStart = policy.indexOf('        if request.isAppleTV {');
+    const tvPolicyEnd = policy.indexOf('\n        return .apply(', tvPolicyStart);
+    const tvPolicy = policy.slice(tvPolicyStart, tvPolicyEnd);
+    const selectAllStart = app.indexOf('    private func selectAllVersionRows() {');
+    const selectAllEnd = app.indexOf('\n    private func selectAllDownloadedRows()', selectAllStart);
+    const selectAll = app.slice(selectAllStart, selectAllEnd);
+    const batchDownloadStart = app.indexOf('    private func downloadSelectedVersions() {');
+    const batchDownloadEnd = app.indexOf('\n    private func showsBatchDownloadMenu(', batchDownloadStart);
+    const batchDownload = app.slice(batchDownloadStart, batchDownloadEnd);
+    const batchMenuStart = app.indexOf('    private func showsBatchDownloadMenu(for record: VersionRecord) -> Bool {');
+    const batchMenuEnd = app.indexOf('\n    private func handleSelectAllShortcut()', batchMenuStart);
+    const batchMenu = app.slice(batchMenuStart, batchMenuEnd);
+
+    assert.notEqual(tvPolicyStart, -1, 'Apple TV response policy should exist');
+    assert.notEqual(tvPolicyEnd, -1, 'Apple TV response policy should end before the default policy');
+    assert.match(tvPolicy, /visibleVersionIDs:\s*Array\(response\.versionIDs\.reversed\(\)\)/);
+    assert.doesNotMatch(tvPolicy, /latestVersionID/);
+    assert.doesNotMatch(app, /Apple TV 目前仅提供 Apple 来源的最新版本或手动版本 ID。/);
+    assert.notEqual(selectAllStart, -1, 'select all versions should exist');
+    assert.match(selectAll, /selectedVersionIDs\s*=\s*Set\(catalog\.versionResults\.map\(\\\.id\)\)/);
+    assert.doesNotMatch(selectAll, /activeAppIsAppleTV|prefix\(1\)/);
+    assert.notEqual(batchDownloadStart, -1, 'batch download should exist');
+    assert.doesNotMatch(batchDownload, /activeAppIsAppleTV/);
+    assert.notEqual(batchMenuStart, -1, 'batch menu visibility should exist');
+    assert.match(batchMenu, /selectedVersionIDs\.count\s*>\s*1\s*&&\s*selectedVersionIDs\.contains\(record\.id\)/);
+    assert.doesNotMatch(batchMenu, /activeAppIsAppleTV/);
+});
