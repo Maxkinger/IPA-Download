@@ -9,9 +9,12 @@ IDAPastel 维护在 `tv` 分支，使用独立 Bundle ID 和本地数据，不�
 ## Apple TV 第一版能力
 
 - 搜索和 App ID 查找
+- 支持有 Apple TV 商店的地区进行 TV 关键词搜索
 - 最新 tvOS 包
 - 手动外部版本 ID
 - AppleTVOS 下载后校验
+
+中国大陆区没有 Apple TV App Store，因此选择中国区时 Apple TV 平台入口会自动禁用；请切换到有 Apple TV 商店的地区后再搜索或下载。
 
 ## 不包含的能力
 

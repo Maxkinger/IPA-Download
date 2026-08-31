@@ -2839,6 +2839,10 @@ struct ContentView: View {
         HStack(spacing: 0) {
             ForEach(Array(AppSearchPlatform.allCases.enumerated()), id: \.element.id) { index, platform in
                 let isSelected = selectedSearchPlatform == platform
+                let isUnavailable = !AppStorePlatformAvailability.isPlatformAvailable(
+                    platform.rawValue,
+                    country: selectedCountryCode
+                )
                 Button {
                     selectSearchPlatform(platform)
                 } label: {
@@ -2864,6 +2868,9 @@ struct ContentView: View {
                     .contentShape(Capsule())
                 }
                 .buttonStyle(StablePressButtonStyle())
+                .disabled(isUnavailable)
+                .opacity(isUnavailable ? 0.45 : 1)
+                .help(isUnavailable ? String(localized: "中国区暂不提供 Apple TV App Store。") : "")
 
                 if index < AppSearchPlatform.allCases.count - 1 {
                     Rectangle()
@@ -4762,6 +4769,9 @@ struct ContentView: View {
 
     private func selectSearchPlatform(_ platform: AppSearchPlatform) {
         guard selectedSearchPlatform != platform else { return }
+        guard AppStorePlatformAvailability.isPlatformAvailable(platform.rawValue, country: selectedCountryCode) else {
+            return
+        }
         selectedSearchPlatformID = platform.rawValue
         catalog.platform = platform.rawValue
         clearActiveAppSelectionForPlatformChange()
@@ -4804,6 +4814,18 @@ struct ContentView: View {
         let country = AppStoreCountry.named(code)
         selectedCountryCode = country.code
         catalog.country = country.code
+
+        let currentPlatform = selectedSearchPlatform.rawValue
+        let availablePlatform = AppStorePlatformAvailability.fallbackPlatform(
+            platform: currentPlatform,
+            country: country.code
+        )
+        if availablePlatform != currentPlatform {
+            selectedSearchPlatformID = availablePlatform
+            catalog.platform = availablePlatform
+            catalog.historyProvider = "auto"
+            clearActiveAppSelectionForPlatformChange()
+        }
 
         guard reload, rightPanel == .search else { return }
         if catalog.searchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {

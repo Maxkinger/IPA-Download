@@ -53,6 +53,16 @@ jobs:
             -o "$RUNNER_TEMP/AppleVersionIDsRequestPolicyTests"
           "$RUNNER_TEMP/AppleVersionIDsRequestPolicyTests"
 
+      - name: Test App Store platform availability
+        run: |
+          xcrun swiftc \
+            -parse-as-library \
+            -module-cache-path "$RUNNER_TEMP/idapastel-swift-module-cache" \
+            Pastel/AppStorePlatformAvailability.swift \
+            Tests/AppStorePlatformAvailabilityTests.swift \
+            -o "$RUNNER_TEMP/AppStorePlatformAvailabilityTests"
+          "$RUNNER_TEMP/AppStorePlatformAvailabilityTests"
+
       - name: Test workflow asset selection
         run: ruby Scripts/TestIDAPastelWorkflowAssets.rb
 

@@ -37,6 +37,12 @@ function extractAppId(input) {
     return '';
 }
 
+function extractAppStoreCountry(input) {
+    const value = asText(input);
+    const match = value.match(/https?:\/\/apps\.apple\.com\/([a-z]{2})(?:-[a-z]{2})?\//i);
+    return match ? match[1].toLowerCase() : '';
+}
+
 function appPlatformFromItem(item, fallback = '') {
     const normalizedFallback = normalizeAppPlatform(fallback);
     if (normalizedFallback === 'appletv' || normalizedFallback === 'vision') return normalizedFallback;
@@ -159,11 +165,11 @@ async function fetchVisionAppIDs({country = 'cn', term = ''} = {}) {
     return extractAppleAppIdsFromHTML(data);
 }
 
-async function lookupAppsByIds(ids, {country = 'cn', platform = 'iphone'} = {}) {
+async function lookupAppsByIds(ids, {country = 'cn', platform = 'iphone', client = catalogClient} = {}) {
     if (!ids.length) return [];
     const cleanPlatform = normalizeAppPlatform(platform);
 
-    const {data} = await catalogClient.get('https://itunes.apple.com/lookup', {
+    const {data} = await client.get('https://itunes.apple.com/lookup', {
         params: {
             id: ids.join(','),
             country,
@@ -200,9 +206,9 @@ async function appPriceInfo(appId, {country = 'us'} = {}) {
     }
 }
 
-async function lookupApp(appId, {country = 'cn', platform = 'iphone'} = {}) {
+async function lookupApp(appId, {country = 'cn', platform = 'iphone', client = catalogClient} = {}) {
     const cleanPlatform = normalizeAppPlatform(platform);
-    const {data} = await catalogClient.get('https://itunes.apple.com/lookup', {
+    const {data} = await client.get('https://itunes.apple.com/lookup', {
         params: {
             id: appId,
             country,
@@ -223,17 +229,35 @@ async function lookupApp(appId, {country = 'cn', platform = 'iphone'} = {}) {
     };
 }
 
-async function searchApps(term, {country = 'cn', platform = 'iphone', limit = 30} = {}) {
+async function fetchAppleTVAppIDs({country = 'cn', term = '', client = catalogClient} = {}) {
+    const cleanCountry = asText(country).toLowerCase() || 'cn';
+    const {data} = await client.get(`https://apps.apple.com/${cleanCountry}/tv/search`, {
+        params: {term: asText(term)},
+    });
+    return extractAppleAppIdsFromHTML(data);
+}
+
+async function searchAppleTVApps(term, {country = 'cn', limit = 30, client = catalogClient} = {}) {
+    const ids = await fetchAppleTVAppIDs({country, term, client});
+    const detailed = await lookupAppsByIds(ids, {country, platform: 'appletv', client});
+    return detailed.slice(0, limit);
+}
+
+async function searchApps(term, {country = 'cn', platform = 'iphone', limit = 30, client = catalogClient} = {}) {
     const cleanPlatform = normalizeAppPlatform(platform);
     const cleanLimit = Math.max(1, Math.min(Number(limit) || 30, 200));
     const appId = extractAppId(term);
     if (appId) {
-        return lookupApp(appId, {country, platform: cleanPlatform});
+        return lookupApp(appId, {
+            country: extractAppStoreCountry(term) || country,
+            platform: cleanPlatform,
+            client,
+        });
     }
 
     if (cleanPlatform === 'vision') {
         const ids = await fetchVisionAppIDs({country, term});
-        const detailed = await lookupAppsByIds(ids, {country, platform: cleanPlatform});
+        const detailed = await lookupAppsByIds(ids, {country, platform: cleanPlatform, client});
         const results = detailed.slice(0, cleanLimit);
         return {
             queryType: 'search',
@@ -242,7 +266,7 @@ async function searchApps(term, {country = 'cn', platform = 'iphone', limit = 30
         };
     }
 
-    const {data} = await catalogClient.get('https://itunes.apple.com/search', {
+    const {data} = await client.get('https://itunes.apple.com/search', {
         params: {
             term,
             country,
@@ -252,6 +276,14 @@ async function searchApps(term, {country = 'cn', platform = 'iphone', limit = 30
     });
 
     let rawResults = Array.isArray(data.results) ? data.results : [];
+    if (cleanPlatform === 'appletv' && rawResults.length === 0) {
+        const results = await searchAppleTVApps(term, {country, limit: cleanLimit, client});
+        return {
+            queryType: 'search',
+            count: results.length,
+            results,
+        };
+    }
     if (cleanPlatform === 'vision') {
         const visionResults = rawResults.filter(isVisionCompatibleItem);
         if (visionResults.length) rawResults = visionResults;
@@ -497,9 +529,13 @@ async function fetchVersions(appId, {provider = 'auto'} = {}) {
 
 export {
     extractAppId,
+    extractAppStoreCountry,
+    extractAppleAppIdsFromHTML,
     featuredApps,
+    fetchAppleTVAppIDs,
     appPriceInfo,
     lookupApp,
     searchApps,
+    searchAppleTVApps,
     fetchVersions,
 };
