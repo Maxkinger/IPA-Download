@@ -142,3 +142,31 @@ Run `cd NodeProject && node --test test/tvos-ranking.test.js test/catalog.test.j
 - [ ] **Step 4: Run verification and commit**
 
 Run `cd NodeProject && npm test`，并用 `node main.js featured --country hk --platform appletv --limit 5` 和 `--country jp` 做真实页面冒烟；Commit `fix: support localized Apple TV rankings`。
+
+### Task 4: 严格图表链接校验与国家切换门禁
+
+**Files:**
+- Modify: `NodeProject/src/tvos-ranking.js`
+- Modify: `NodeProject/test/tvos-ranking.test.js`
+- Modify: `NodeProject/test/catalog.test.js`
+- Modify: `Pastel/PastelApp.swift:3496-3510,4836-4849`
+
+**Interfaces:**
+- Chart shelf detection accepts only relative or `https://apps.apple.com` links whose pathname is `/{two-letter-country}/tv/charts/36` and whose `chart` query equals the requested chart.
+- All country changes, including the country menu and downloaded-app navigation, pass through `applyStorefrontCountry`; selecting China while Apple TV is active must synchronously fall back to iPhone before any catalog request.
+
+- [ ] **Step 1: Write failing tests**
+
+Add parser negative fixtures for a normal app URL whose query contains `/us/tv/charts/36?chart=top-free`, and for an external origin containing the same path; both must return no chart IDs. Add a static Swift regression test that scopes `selectCountry` and `searchForApp` and requires `applyStorefrontCountry` while rejecting direct `selectedCountryCode`/`catalog.country` assignments.
+
+- [ ] **Step 2: Run focused tests and verify RED**
+
+Run `cd NodeProject && node --test test/tvos-ranking.test.js test/catalog.test.js`; Expected: malicious chart-link fixture and Swift country-routing assertions fail against the current implementation.
+
+- [ ] **Step 3: Implement strict href parsing and country routing**
+
+Parse each section `href` with `new URL(href, 'https://apps.apple.com')`; reject absolute URLs whose origin is not exactly `https://apps.apple.com`, require the two-letter storefront path and `searchParams.get('chart')`. Change `selectCountry` and `searchForApp` to call `applyStorefrontCountry` instead of assigning country state directly; preserve account-match selection behavior.
+
+- [ ] **Step 4: Verify and commit**
+
+Run `cd NodeProject && npm test` and `xcodebuild -project Pastel.xcodeproj -scheme IDAPastel -configuration Debug -derivedDataPath .build/idapastel-ranking-gate CODE_SIGN_IDENTITY=- build`; Commit `fix: guard localized TV chart links and storefront changes`。
