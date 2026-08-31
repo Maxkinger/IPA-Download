@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
     extractAppleAppIdsFromHTML,
     extractAppStoreCountry,
+    featuredApps,
     searchApps,
 } from '../src/catalog.js';
 
@@ -89,6 +90,34 @@ test('falls back to Apple TV web search when iTunes keyword search is empty', as
     assert.deepEqual(requests.map(request => request.url), [
         'https://itunes.apple.com/search',
         'https://apps.apple.com/us/tv/search',
+        'https://itunes.apple.com/lookup',
+    ]);
+});
+
+test('featured Apple TV requests discover then tvSoftware lookup', async () => {
+    const requests = [];
+    const client = {async get(url, options = {}) {
+        requests.push({url, options});
+        if (url === 'https://apps.apple.com/us/tv/discover') {
+            return {data: '<section aria-label="Top Free"><a href="/us/app/free/id111"></a></section>'};
+        }
+        assert.equal(url, 'https://itunes.apple.com/lookup');
+        assert.equal(options.params.entity, 'tvSoftware');
+        return {data: {results: [{
+            trackId: 111,
+            trackName: 'TV App',
+            supportedDevices: ['AppleTV4-AppleTV4'],
+        }]}};
+    }};
+
+    const response = await featuredApps({
+        country: 'us', platform: 'appletv', limit: 10, offset: 0, client,
+    });
+
+    assert.equal(response.count, 1);
+    assert.equal(response.results[0].platform, 'appletv');
+    assert.deepEqual(requests.map(request => request.url), [
+        'https://apps.apple.com/us/tv/discover',
         'https://itunes.apple.com/lookup',
     ]);
 });

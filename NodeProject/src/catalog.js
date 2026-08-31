@@ -1,5 +1,6 @@
 import axios from 'axios';
 import {t} from './i18n.js';
+import {buildTVDiscoverURL, extractTVRankingAppIds} from './tvos-ranking.js';
 import {
     lookupEntityForPlatform,
     normalizeAppPlatform,
@@ -14,6 +15,10 @@ const catalogClient = axios.create({
     },
     validateStatus: (status) => status >= 200 && status < 300,
 });
+
+const TV_RANKING_CACHE_TTL_MS = 10 * 60 * 1000;
+const TV_RANKING_CACHE_MAX_COUNTRIES = 20;
+const tvRankingCache = new Map();
 
 function asText(value) {
     if (value === undefined || value === null) return '';
@@ -346,20 +351,40 @@ async function fetchRankedRSSApps(country, platform = 'iphone') {
     return apps;
 }
 
-async function featuredApps({country = 'cn', platform = 'iphone', limit = 30, offset = 0} = {}) {
+async function fetchFeaturedAppleTVApps(country, client) {
+    const cached = tvRankingCache.get(country);
+    if (cached && cached.expiresAt > Date.now()) return cached.apps;
+
+    const {data} = await client.get(buildTVDiscoverURL(country), {
+        headers: {
+            'Accept': 'text/html,application/xhtml+xml',
+        },
+    });
+    const ids = extractTVRankingAppIds(data, 200);
+    const apps = await lookupAppsByIds(ids, {country, platform: 'appletv', client});
+
+    if (tvRankingCache.size >= TV_RANKING_CACHE_MAX_COUNTRIES) {
+        tvRankingCache.delete(tvRankingCache.keys().next().value);
+    }
+    tvRankingCache.set(country, {apps, expiresAt: Date.now() + TV_RANKING_CACHE_TTL_MS});
+    return apps;
+}
+
+async function featuredApps({country = 'cn', platform = 'iphone', limit = 30, offset = 0, client = catalogClient} = {}) {
     const cleanCountry = asText(country).toLowerCase() || 'cn';
     const cleanPlatform = normalizeAppPlatform(platform);
     const cleanLimit = Math.max(1, Math.min(Number(limit) || 30, 200));
     const cleanOffset = Math.max(0, Number(offset) || 0);
 
     if (cleanPlatform === 'appletv') {
+        const apps = await fetchFeaturedAppleTVApps(cleanCountry, client);
         return {
             queryType: 'featured',
-            count: 0,
+            count: apps.length,
             offset: cleanOffset,
             limit: cleanLimit,
-            hasMore: false,
-            results: [],
+            hasMore: cleanOffset + cleanLimit < apps.length,
+            results: apps.slice(cleanOffset, cleanOffset + cleanLimit),
         };
     }
 
