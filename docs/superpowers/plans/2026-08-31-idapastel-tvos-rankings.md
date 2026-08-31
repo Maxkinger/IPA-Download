@@ -83,7 +83,7 @@ Run `cd NodeProject && node --test test/tvos-ranking.test.js`；Expected：因 `
 
 - [ ] **Step 4: Integrate catalog with bounded cache**
 
-在 `catalog.js` 中增加 10 分钟的国家级 TV 榜单缓存（缓存已补全的 TV App 结果），请求使用 `Accept: text/html,application/xhtml+xml`；页面无 shelf 或 lookup 结果为空时返回现有 featured 空结果。`featuredApps` 的 `appletv` 分支按 offset/limit 分页；不触碰 iPhone、iPad、Vision 分支。
+在 `catalog.js` 中增加跨 Node CLI 进程可复用的 10 分钟国家级 TV 榜单缓存（默认保存到 `~/Library/Application Support/IDAPastel/tv-ranking-cache.json`，测试可通过显式 cache file 注入），缓存已补全的 TV App 结果；请求使用 `Accept: text/html,application/xhtml+xml`；页面无 shelf 或 lookup 结果为空时返回现有 featured 空结果。`featuredApps` 的 `appletv` 分支按 offset/limit 分页；不触碰 iPhone、iPad、Vision 分支。
 
 - [ ] **Step 5: Run tests and commit**
 
