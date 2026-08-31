@@ -104,7 +104,7 @@ test('featured Apple TV requests discover then tvSoftware lookup', async () => {
     const requests = [];
     const client = {async get(url, options = {}) {
         requests.push({url, options});
-        if (url === 'https://apps.apple.com/us/tv/discover') {
+        if (url === 'https://apps.apple.com/us/tv/discover?l=en-GB') {
             return {data: '<section aria-label="Top Free"><a href="/us/app/free/id111"></a></section>'};
         }
         assert.equal(url, 'https://itunes.apple.com/lookup');
@@ -124,7 +124,7 @@ test('featured Apple TV requests discover then tvSoftware lookup', async () => {
         assert.equal(response.count, 1);
         assert.equal(response.results[0].platform, 'appletv');
         assert.deepEqual(requests.map(request => request.url), [
-            'https://apps.apple.com/us/tv/discover',
+            'https://apps.apple.com/us/tv/discover?l=en-GB',
             'https://itunes.apple.com/lookup',
         ]);
     } finally {
@@ -135,7 +135,7 @@ test('featured Apple TV requests discover then tvSoftware lookup', async () => {
 function featuredRankingClient(requests, country, id = 111) {
     return {async get(url, options = {}) {
         requests.push({url, options});
-        if (url === `https://apps.apple.com/${country}/tv/discover`) {
+        if (url === `https://apps.apple.com/${country}/tv/discover?l=en-GB`) {
             return {data: `<section aria-label="Top Free"><a href="/${country}/app/free/id${id}"></a></section>`};
         }
         assert.equal(url, 'https://itunes.apple.com/lookup');
@@ -169,7 +169,7 @@ test('restores a same-country Apple TV ranking from the persistent cache', async
 
         assert.equal(result.results[0].name, 'gb TV App');
         assert.deepEqual(firstRequests.map(request => request.url), [
-            'https://apps.apple.com/gb/tv/discover',
+            'https://apps.apple.com/gb/tv/discover?l=en-GB',
             'https://itunes.apple.com/lookup',
         ]);
         assert.deepEqual(secondRequests, []);
@@ -194,7 +194,7 @@ test('keeps persisted Apple TV rankings isolated by country', async () => {
 
         assert.equal(result.results[0].name, 'ca TV App');
         assert.deepEqual(caRequests.map(request => request.url), [
-            'https://apps.apple.com/ca/tv/discover',
+            'https://apps.apple.com/ca/tv/discover?l=en-GB',
             'https://itunes.apple.com/lookup',
         ]);
     } finally {
@@ -221,7 +221,7 @@ test('refreshes an expired persisted Apple TV ranking', async () => {
 
         assert.equal(result.results[0].id, '333');
         assert.deepEqual(requests.map(request => request.url), [
-            'https://apps.apple.com/au/tv/discover',
+            'https://apps.apple.com/au/tv/discover?l=en-GB',
             'https://itunes.apple.com/lookup',
         ]);
     } finally {
@@ -244,7 +244,7 @@ test('does not fall back to RSS when Apple TV discover fails or has no shelf', a
             }},
         });
         assert.deepEqual(empty.results, []);
-        assert.deepEqual(emptyRequests, ['https://apps.apple.com/fr/tv/discover']);
+        assert.deepEqual(emptyRequests, ['https://apps.apple.com/fr/tv/discover?l=en-GB']);
 
         await assert.rejects(featuredApps({
             country: 'de', platform: 'appletv', cachePath,
@@ -253,7 +253,7 @@ test('does not fall back to RSS when Apple TV discover fails or has no shelf', a
                 throw new Error('discover unavailable');
             }},
         }), /discover unavailable/);
-        assert.deepEqual(failedRequests, ['https://apps.apple.com/de/tv/discover']);
+        assert.deepEqual(failedRequests, ['https://apps.apple.com/de/tv/discover?l=en-GB']);
     } finally {
         await rm(directory, {recursive: true, force: true});
     }

@@ -3,16 +3,17 @@ function cleanLimit(limit) {
     return Number.isFinite(value) && value > 0 ? value : Infinity;
 }
 
-function idsFromShelf(html, label, limit) {
+function idsFromShelf(html, chart, label, limit) {
     const sectionPattern = /<section\b([^>]*)>([\s\S]*?)<\/section>/gi;
     const idPattern = /(?:https?:\/\/apps\.apple\.com\/[^"'\s>]+)?\/app\/[^"'?#\s>]*\/id(\d+)(?=[?"'#\s>]|$)/gi;
+    const chartLinkPattern = new RegExp(`(?:https?:\\/\\/apps\\.apple\\.com)?\\/[^"'\\s>]*tv\\/charts\\/36\\?chart=${chart}(?=[&"'#\\s>]|$)`, 'i');
     const ids = [];
     const seen = new Set();
     let section;
 
     while ((section = sectionPattern.exec(String(html || ''))) !== null) {
         const ariaLabel = section[1].match(/\baria-label\s*=\s*(["'])(.*?)\1/i)?.[2];
-        if (ariaLabel !== label) continue;
+        if (!chartLinkPattern.test(section[2]) && ariaLabel !== label) continue;
 
         let app;
         while ((app = idPattern.exec(section[2])) !== null) {
@@ -28,12 +29,12 @@ function idsFromShelf(html, label, limit) {
 
 function buildTVDiscoverURL(country) {
     const cleanCountry = String(country || '').trim().toLowerCase() || 'cn';
-    return `https://apps.apple.com/${cleanCountry}/tv/discover`;
+    return `https://apps.apple.com/${cleanCountry}/tv/discover?l=en-GB`;
 }
 
 function extractTVChartAppIds(html, chart, limit) {
     const label = chart === 'top-free' ? 'Top Free' : chart === 'top-paid' ? 'Top Paid' : '';
-    return label ? idsFromShelf(html, label, cleanLimit(limit)) : [];
+    return label ? idsFromShelf(html, chart, label, cleanLimit(limit)) : [];
 }
 
 function extractTVRankingAppIds(html, limit) {
