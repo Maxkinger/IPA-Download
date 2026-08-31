@@ -133,5 +133,6 @@ test('loadFeatured invokes the Node featured command without an Apple TV early r
     assert.notEqual(end, -1, 'loadFeatured should end before pagination loading');
     assert.match(loadFeatured, /NodeRuntime\.runJSON/);
     assert.match(loadFeatured, /"main\.js",\s*"featured"/);
+    assert.doesNotMatch(loadFeatured, /if\s+platform\s*==\s*AppSearchPlatform\.appleTV\.rawValue\s*\{/);
     assert.doesNotMatch(loadFeatured, /Apple TV 暂无推荐榜单，请搜索 App 或输入 App ID。/);
 });
