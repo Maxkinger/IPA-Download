@@ -5240,8 +5240,10 @@ struct ContentView: View {
         catalog.versionStatus = String(localized: "正在从 Apple 获取版本…")
     }
 
-    private func unavailableAppleVersionStatus(for _: AppleVersionIDsRequestContext) -> String {
-        String(localized: "未能从 Apple 获取版本，请改用其他来源。")
+    private func unavailableAppleVersionStatus(for request: AppleVersionIDsRequestContext) -> String {
+        request.isAppleTV
+            ? String(localized: "Apple TV 历史版本目前仅由 Apple 来源提供，请重试或输入手动版本 ID。")
+            : String(localized: "未能从 Apple 获取版本，请改用其他来源。")
     }
 
     private func appIsFreeFlag() -> String {

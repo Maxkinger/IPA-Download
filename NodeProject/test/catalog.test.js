@@ -314,6 +314,9 @@ test('Apple TV history exposes every trusted version ID and permits multi-versio
     const batchMenuStart = app.indexOf('    private func showsBatchDownloadMenu(for record: VersionRecord) -> Bool {');
     const batchMenuEnd = app.indexOf('\n    private func handleSelectAllShortcut()', batchMenuStart);
     const batchMenu = app.slice(batchMenuStart, batchMenuEnd);
+    const unavailableStatusStart = app.indexOf('    private func unavailableAppleVersionStatus(for request: AppleVersionIDsRequestContext) -> String {');
+    const unavailableStatusEnd = app.indexOf('\n    private func appIsFreeFlag()', unavailableStatusStart);
+    const unavailableStatus = app.slice(unavailableStatusStart, unavailableStatusEnd);
 
     assert.notEqual(tvPolicyStart, -1, 'Apple TV response policy should exist');
     assert.notEqual(tvPolicyEnd, -1, 'Apple TV response policy should end before the default policy');
@@ -328,4 +331,11 @@ test('Apple TV history exposes every trusted version ID and permits multi-versio
     assert.notEqual(batchMenuStart, -1, 'batch menu visibility should exist');
     assert.match(batchMenu, /selectedVersionIDs\.count\s*>\s*1\s*&&\s*selectedVersionIDs\.contains\(record\.id\)/);
     assert.doesNotMatch(batchMenu, /activeAppIsAppleTV/);
+    assert.notEqual(unavailableStatusStart, -1, 'Apple version unavailability status should exist');
+    assert.notEqual(unavailableStatusEnd, -1, 'Apple version unavailability status should end before free-app detection');
+    assert.match(
+        unavailableStatus,
+        /request\.isAppleTV\s*\?\s*String\(localized: "Apple TV 历史版本目前仅由 Apple 来源提供，请重试或输入手动版本 ID。"\)\s*:\s*String\(localized: "未能从 Apple 获取版本，请改用其他来源。"\)/,
+        'Apple TV must not receive the generic alternative-source guidance',
+    );
 });
