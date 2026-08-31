@@ -272,3 +272,29 @@ test('loadFeatured invokes the Node featured command without an Apple TV early r
     assert.doesNotMatch(loadFeatured, /if\s+platform\s*==\s*AppSearchPlatform\.appleTV\.rawValue\s*\{/);
     assert.doesNotMatch(loadFeatured, /Apple TV 暂无推荐榜单，请搜索 App 或输入 App ID。/);
 });
+
+test('country menu selection routes storefront changes through the platform availability gate', async () => {
+    const source = await readFile(new URL('../../Pastel/PastelApp.swift', import.meta.url), 'utf8');
+    const start = source.indexOf('    private func selectCountry(_ country: AppStoreCountry) {');
+    const end = source.indexOf('    private var versionsWorkspace:', start);
+    const selectCountry = source.slice(start, end);
+
+    assert.notEqual(start, -1, 'selectCountry should exist');
+    assert.notEqual(end, -1, 'selectCountry should end before versionsWorkspace');
+    assert.match(selectCountry, /applyStorefrontCountry\(country\.code,\s*reload:\s*true\)/);
+    assert.doesNotMatch(selectCountry, /\bselectedCountryCode\s*=/);
+    assert.doesNotMatch(selectCountry, /\bcatalog\.country\s*=/);
+});
+
+test('downloaded app navigation routes storefront changes through the platform availability gate', async () => {
+    const source = await readFile(new URL('../../Pastel/PastelApp.swift', import.meta.url), 'utf8');
+    const start = source.indexOf('    private func searchForApp(_ group: DownloadedAppGroup) {');
+    const end = source.indexOf('    private func prepareVersionsFromDownload()', start);
+    const searchForApp = source.slice(start, end);
+
+    assert.notEqual(start, -1, 'searchForApp should exist');
+    assert.notEqual(end, -1, 'searchForApp should end before prepareVersionsFromDownload');
+    assert.match(searchForApp, /applyStorefrontCountry\(code,\s*reload:\s*false\)/);
+    assert.doesNotMatch(searchForApp, /\bselectedCountryCode\s*=/);
+    assert.doesNotMatch(searchForApp, /\bcatalog\.country\s*=/);
+});

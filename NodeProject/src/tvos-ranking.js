@@ -6,14 +6,23 @@ function cleanLimit(limit) {
 function idsFromShelf(html, chart, label, limit) {
     const sectionPattern = /<section\b([^>]*)>([\s\S]*?)<\/section>/gi;
     const idPattern = /(?:https?:\/\/apps\.apple\.com\/[^"'\s>]+)?\/app\/[^"'?#\s>]*\/id(\d+)(?=[?"'#\s>]|$)/gi;
-    const chartLinkPattern = new RegExp(`(?:https?:\\/\\/apps\\.apple\\.com)?\\/[a-z]{2}\\/tv\\/charts\\/36\\?(?:[^"'#\\s>]*&)?chart=${chart}(?=[&"'#\\s>]|$)`, 'i');
     const ids = [];
     const seen = new Set();
     let section;
 
     while ((section = sectionPattern.exec(String(html || ''))) !== null) {
         const ariaLabel = section[1].match(/\baria-label\s*=\s*(["'])(.*?)\1/i)?.[2];
-        if (!chartLinkPattern.test(section[2]) && ariaLabel !== label) continue;
+        const hasChartLink = Array.from(section[2].matchAll(/\bhref\s*=\s*(["'])(.*?)\1/gi)).some(([, , href]) => {
+            try {
+                const url = new URL(href, 'https://apps.apple.com');
+                return url.origin === 'https://apps.apple.com'
+                    && /^\/[a-z]{2}\/tv\/charts\/36$/.test(url.pathname)
+                    && url.searchParams.get('chart') === chart;
+            } catch {
+                return false;
+            }
+        });
+        if (!hasChartLink && ariaLabel !== label) continue;
 
         let app;
         while ((app = idPattern.exec(section[2])) !== null) {

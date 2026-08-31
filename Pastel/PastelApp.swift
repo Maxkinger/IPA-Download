@@ -3494,8 +3494,6 @@ struct ContentView: View {
     }
 
     private func selectCountry(_ country: AppStoreCountry) {
-        selectedCountryCode = country.code
-        catalog.country = country.code
         activeField = nil
         NSApp.keyWindow?.makeFirstResponder(nil)
 
@@ -3505,9 +3503,7 @@ struct ContentView: View {
             return
         }
 
-        if catalog.searchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            catalog.loadFeatured()
-        }
+        applyStorefrontCountry(country.code, reload: true)
     }
 
     private var versionsWorkspace: some View {
@@ -4840,8 +4836,7 @@ struct ContentView: View {
             applyDownloadedPlatform(item)
         }
         if let code = storefrontCountryCode(group.storefrontId) {
-            selectedCountryCode = code
-            catalog.country = code
+            applyStorefrontCountry(code, reload: false)
         }
         catalog.searchQuery = query
         rightPanel = .search

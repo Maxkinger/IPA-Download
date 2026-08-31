@@ -40,7 +40,13 @@ const japaneseRankingHTML = `
 
 const misleadingAppLinkHTML = `
   <section data-test-id="shelf-wrapper" aria-label="無料Appランキング">
-    <a href="/us/app/foo/id999?next=/tv/charts/36?chart=top-free">not a chart</a>
+    <a href="/us/app/foo/id999?next=/us/tv/charts/36?chart=top-free">not a chart</a>
+  </section>`;
+
+const externalChartLinkHTML = `
+  <section data-test-id="shelf-wrapper" aria-label="無料Appランキング">
+    <a href="https://example.com/us/tv/charts/36?chart=top-free">not an Apple chart</a>
+    <a href="/us/app/foo/id999">ordinary app</a>
   </section>`;
 
 test('extracts top free and paid IDs in shelf order', () => {
@@ -69,4 +75,8 @@ test('extracts Japanese localized shelves identified by official chart links', (
 
 test('does not treat chart text in an app link query as a chart shelf', () => {
     assert.deepEqual(extractTVChartAppIds(misleadingAppLinkHTML, 'top-free', 10), []);
+});
+
+test('does not treat a chart path on an external origin as an Apple chart shelf', () => {
+    assert.deepEqual(extractTVChartAppIds(externalChartLinkHTML, 'top-free', 10), []);
 });
