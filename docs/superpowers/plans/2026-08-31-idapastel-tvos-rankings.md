@@ -115,3 +115,30 @@ Run `cd NodeProject && node --test test/tvos-ranking.test.js test/catalog.test.j
 - [ ] **Step 4: Commit**
 
 Commit `feat: show Apple TV featured rankings`。
+
+### Task 3: 兼容本地化 TV 榜单页面
+
+**Files:**
+- Modify: `NodeProject/src/tvos-ranking.js`
+- Modify: `NodeProject/test/tvos-ranking.test.js`
+- Modify: `NodeProject/test/catalog.test.js`
+
+**Interfaces:**
+- `buildTVDiscoverURL(country)` 在 discover URL 上追加 `l=en-GB`，让 Apple 尽量返回稳定的英文 shelf 标签。
+- `extractTVChartAppIds` 仍支持 `Top Free`/`Top Paid`，并额外通过 shelf 内的官方 `/tv/charts/36?chart=top-free|top-paid` 链接识别本地化标签（例如香港的 `免費 App 排行`/`付費排行`、日本语标签）。
+
+- [ ] **Step 1: Write failing tests**
+
+新增香港/日本本地化 fixture：section 的 `aria-label` 使用本地化文本，但内部保留对应 chart href；断言两种榜单仍能按顺序提取，并断言 URL 包含 `l=en-GB`。新增注入 client featured 测试断言请求的 discover URL 是带语言参数的 URL。
+
+- [ ] **Step 2: Run focused tests and verify RED**
+
+Run `cd NodeProject && node --test test/tvos-ranking.test.js test/catalog.test.js`；Expected：语言参数 URL 断言失败，且本地化 section 解析为空。
+
+- [ ] **Step 3: Implement locale-tolerant discovery**
+
+更新 URL builder 和 shelf 识别逻辑；优先使用 chart href 识别榜单、英文 aria-label 作为兼容回退。不得扩大到普通 App Store 链接或 iPhone RSS。
+
+- [ ] **Step 4: Run verification and commit**
+
+Run `cd NodeProject && npm test`，并用 `node main.js featured --country hk --platform appletv --limit 5` 和 `--country jp` 做真实页面冒烟；Commit `fix: support localized Apple TV rankings`。
