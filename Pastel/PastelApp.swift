@@ -1932,15 +1932,6 @@ final class CatalogViewModel: ObservableObject {
         selectedSearchID = nil
         searchStatus = String(localized: "正在加载 App...")
 
-        if platform == AppSearchPlatform.appleTV.rawValue {
-            searchResults = []
-            isSearching = false
-            isShowingFeatured = false
-            canLoadMoreFeatured = false
-            searchStatus = String(localized: "Apple TV 暂无推荐榜单，请搜索 App 或输入 App ID。")
-            return
-        }
-
         Task {
             var lastError: Error?
             for attempt in 0..<2 {

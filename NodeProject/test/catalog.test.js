@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import {readFile} from 'node:fs/promises';
 import {
     extractAppleAppIdsFromHTML,
     extractAppStoreCountry,
@@ -120,4 +121,17 @@ test('featured Apple TV requests discover then tvSoftware lookup', async () => {
         'https://apps.apple.com/us/tv/discover',
         'https://itunes.apple.com/lookup',
     ]);
+});
+
+test('loadFeatured invokes the Node featured command without an Apple TV early return', async () => {
+    const source = await readFile(new URL('../../Pastel/PastelApp.swift', import.meta.url), 'utf8');
+    const start = source.indexOf('    func loadFeatured() {');
+    const end = source.indexOf('    func loadMoreFeaturedIfNeeded(', start);
+    const loadFeatured = source.slice(start, end);
+
+    assert.notEqual(start, -1, 'loadFeatured should exist');
+    assert.notEqual(end, -1, 'loadFeatured should end before pagination loading');
+    assert.match(loadFeatured, /NodeRuntime\.runJSON/);
+    assert.match(loadFeatured, /"main\.js",\s*"featured"/);
+    assert.doesNotMatch(loadFeatured, /Apple TV 暂无推荐榜单，请搜索 App 或输入 App ID。/);
 });
