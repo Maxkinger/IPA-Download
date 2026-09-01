@@ -33,6 +33,8 @@ const CLEANUP_ERROR_CODES = new Set([
     'TEMP_CLEANUP_FAILED',
 ]);
 
+const APPLE_VERSION_METADATA_CONCURRENCY = 3;
+
 function cleanupFailure(code, message, cleanupError, primaryError = null) {
     const error = new Error(message, {cause: primaryError || cleanupError});
     error.code = code;
@@ -56,6 +58,50 @@ function isLicenseRequiredError(error) {
     return error?.code === 'LICENSE_REQUIRED'
         || String(error?.failureType || '') === '9610'
         || /license\s+(?:not found|required)/i.test(String(error?.customerMessage || error?.message || ''));
+}
+
+function positiveByteString(...values) {
+    for (const value of values) {
+        if (typeof value === 'number' && Number.isFinite(value) && value > 0) {
+            return String(Math.trunc(value));
+        }
+        const text = String(value ?? '').trim();
+        if (/^\d+$/.test(text) && Number(text) > 0) return text;
+    }
+    return '';
+}
+
+function versionDetailFromSong(versionId, song) {
+    const metadata = song?.metadata && typeof song.metadata === 'object' ? song.metadata : {};
+    return {
+        versionId: String(versionId),
+        version: String(metadata.bundleShortVersionString ?? song?.bundleShortVersionString ?? '').trim(),
+        sizeBytes: positiveByteString(
+            song?.['file-size'],
+            song?.fileSizeBytes,
+            song?.sizeBytes,
+            song?.size,
+            metadata.fileSizeBytes,
+            metadata.fileSize,
+            metadata['file-size'],
+            metadata.sizeBytes,
+            metadata.size,
+        ),
+    };
+}
+
+async function mapWithConcurrency(items, limit, worker) {
+    const results = new Array(items.length);
+    let nextIndex = 0;
+    const workerCount = Math.min(Math.max(1, limit), items.length);
+    await Promise.all(Array.from({length: workerCount}, async () => {
+        while (true) {
+            const index = nextIndex++;
+            if (index >= items.length) return;
+            results[index] = await worker(items[index]);
+        }
+    }));
+    return results;
 }
 
 function appSupportDir() {
@@ -264,6 +310,40 @@ export class Ipa {
         return await this._withReauth(() => this._listVersionIdsOnce(APPID, platform));
     }
 
+    async fetchAppleTVVersionDetails(APPID, versionIds, latestVersionID, latestSong) {
+        const details = new Map();
+        const latestID = String(latestVersionID || '').trim();
+        if (latestID && latestSong) {
+            details.set(latestID, versionDetailFromSong(latestID, latestSong));
+        }
+
+        const remainingIds = versionIds
+            .map(id => String(id).trim())
+            .filter(id => id && !details.has(id));
+        const fetched = await mapWithConcurrency(
+            remainingIds,
+            APPLE_VERSION_METADATA_CONCURRENCY,
+            async versionId => {
+                try {
+                    const appInfo = await Store.AppInfo(APPID, versionId, this.auth);
+                    return versionDetailFromSong(versionId, appInfo?.songList?.[0]);
+                } catch (error) {
+                    // A single withdrawn/unavailable historical version should
+                    // not hide the other IDs. Session failures still bubble up
+                    // so the surrounding re-authentication flow can retry.
+                    if (error?.code === 'TOKEN_EXPIRED') throw error;
+                    return {versionId, version: '', sizeBytes: ''};
+                }
+            },
+        );
+        for (const detail of fetched) details.set(detail.versionId, detail);
+
+        return versionIds.map(id => {
+            const versionId = String(id).trim();
+            return details.get(versionId) || {versionId, version: '', sizeBytes: ''};
+        });
+    }
+
     async _listVersionIdsOnce(APPID, platform) {
         const appleTV = isAppleTVPlatform(platform);
         const resolvedVersionID = await this.resolveAppVersionID(APPID, '', platform);
@@ -305,6 +385,7 @@ export class Ipa {
                 latestVersion: meta.bundleShortVersionString || '',
                 latestVersionId: resolvedVersionID,
                 versionIds,
+                versionDetails: await this.fetchAppleTVVersionDetails(APPID, versionIds, resolvedVersionID, s),
                 platform: 'appletv',
             };
         }

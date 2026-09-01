@@ -5441,8 +5441,38 @@ struct ContentView: View {
             catalog.versionStatus = String(localized: "此 Apple 账户未拥有此 App，是否从 Apple 获取此 App？")
             return
         }
-        let records = visibleIDs.map { id in
-            VersionRecord(id: "apple-\(id)", version: "—", versionId: id, date: "", size: "", source: "Apple")
+        let versionDetails: [AppleVersionDetail] = {
+            guard request.isAppleTV,
+                  let rawDetails = obj["versionDetails"] as? [[String: Any]]
+            else { return [] }
+
+            func scalarString(_ value: Any?) -> String {
+                if let text = value as? String { return text }
+                if let number = value as? NSNumber { return number.stringValue }
+                return ""
+            }
+
+            return rawDetails.compactMap { rawDetail in
+                let versionID = scalarString(rawDetail["versionId"]).trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !versionID.isEmpty else { return nil }
+                return AppleVersionDetail(
+                    versionID: versionID,
+                    version: scalarString(rawDetail["version"]).trimmingCharacters(in: .whitespacesAndNewlines),
+                    sizeBytes: scalarString(rawDetail["sizeBytes"]).trimmingCharacters(in: .whitespacesAndNewlines)
+                )
+            }
+        }()
+        let records = AppleVersionDetailPolicy.ordered(versionDetails, visibleVersionIDs: visibleIDs).map { detail in
+            let version = detail.version
+            let size = formatByteString(detail.sizeBytes)
+            return VersionRecord(
+                id: "apple-\(detail.versionID)",
+                version: version.isEmpty ? "—" : version,
+                versionId: detail.versionID,
+                date: "",
+                size: size,
+                source: "Apple"
+            )
         }
         appleVersionFetchNeedsAcquisition = false
         selectedVersionIDs.removeAll()

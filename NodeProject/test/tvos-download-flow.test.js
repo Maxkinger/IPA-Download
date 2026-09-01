@@ -154,6 +154,52 @@ test('falls back to the resolved Apple TV version for an unrelated version famil
     }
 });
 
+test('enriches Apple TV version IDs with per-version metadata and keeps failed rows', async () => {
+    const originalAppInfo = Store.AppInfo;
+    const requestedVersionIds = [];
+    const songs = {
+        '900': {
+            metadata: {
+                bundleDisplayName: 'Apple TV Fixture',
+                bundleShortVersionString: '3.0',
+                softwareVersionExternalIdentifiers: [700, '800', '900'],
+            },
+            'file-size': 3145728,
+        },
+        '700': {
+            metadata: {bundleShortVersionString: '1.0'},
+            'file-size': 1572864,
+        },
+        '800': {
+            metadata: {bundleShortVersionString: '2.0'},
+            'file-size': 2097152,
+        },
+    };
+    Store.AppInfo = async (_appId, versionId) => {
+        const id = String(versionId);
+        requestedVersionIds.push(id);
+        if (id === '800') throw new Error('version metadata temporarily unavailable');
+        return {songList: [songs[id]]};
+    };
+
+    try {
+        const app = new Ipa(credentials, {lookupTVVersion: async () => '900'});
+        app.user = {};
+        app.persistCurrentSession = async () => {};
+
+        const result = await app.listVersionIds('42', 'appletv');
+
+        assert.deepEqual(result.versionDetails, [
+            {versionId: '700', version: '1.0', sizeBytes: '1572864'},
+            {versionId: '800', version: '', sizeBytes: ''},
+            {versionId: '900', version: '3.0', sizeBytes: '3145728'},
+        ]);
+        assert.deepEqual([...new Set(requestedVersionIds)].sort(), ['700', '800', '900']);
+    } finally {
+        Store.AppInfo = originalAppInfo;
+    }
+});
+
 test('removes a package rejected by Apple TV validation', async () => {
     const directory = mkdtempSync(join(tmpdir(), 'idapastel-download-flow-'));
     const output = join(directory, 'wrong-platform.ipa');

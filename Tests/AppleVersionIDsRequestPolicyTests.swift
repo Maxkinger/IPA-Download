@@ -97,6 +97,22 @@ struct AppleVersionIDsRequestPolicyTests {
             "a matching Apple TV response keeps all trusted IDs in reverse order"
         )
 
+        let versionDetails = AppleVersionDetailPolicy.ordered(
+            [
+                AppleVersionDetail(versionID: "700", version: "1.0", sizeBytes: "1572864"),
+                AppleVersionDetail(versionID: "900", version: "3.0", sizeBytes: "3145728"),
+            ],
+            visibleVersionIDs: ["900", "800", "700"]
+        )
+        expect(
+            versionDetails == [
+                AppleVersionDetail(versionID: "900", version: "3.0", sizeBytes: "3145728"),
+                AppleVersionDetail(versionID: "800", version: "", sizeBytes: ""),
+                AppleVersionDetail(versionID: "700", version: "1.0", sizeBytes: "1572864"),
+            ],
+            "Apple TV version details follow visible IDs and preserve placeholders"
+        )
+
         expect(
             AppleVersionIDsRequestPolicy.decision(
                 for: AppleVersionIDsResponse(

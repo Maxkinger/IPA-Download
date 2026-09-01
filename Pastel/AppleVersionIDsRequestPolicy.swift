@@ -27,6 +27,28 @@ struct AppleVersionIDsResponse: Equatable {
     let versionIDs: [String]
 }
 
+struct AppleVersionDetail: Equatable {
+    let versionID: String
+    let version: String
+    let sizeBytes: String
+}
+
+enum AppleVersionDetailPolicy {
+    static func ordered(
+        _ details: [AppleVersionDetail],
+        visibleVersionIDs: [String]
+    ) -> [AppleVersionDetail] {
+        var byID: [String: AppleVersionDetail] = [:]
+        for detail in details {
+            byID[detail.versionID] = detail
+        }
+
+        return visibleVersionIDs.map { versionID in
+            byID[versionID] ?? AppleVersionDetail(versionID: versionID, version: "", sizeBytes: "")
+        }
+    }
+}
+
 enum AppleVersionIDsResponseDecision: Equatable {
     case stale
     case apply(visibleVersionIDs: [String], isAppleTV: Bool)

@@ -317,6 +317,9 @@ test('Apple TV history exposes every trusted version ID and permits multi-versio
     const unavailableStatusStart = app.indexOf('    private func unavailableAppleVersionStatus(for request: AppleVersionIDsRequestContext) -> String {');
     const unavailableStatusEnd = app.indexOf('\n    private func appIsFreeFlag()', unavailableStatusStart);
     const unavailableStatus = app.slice(unavailableStatusStart, unavailableStatusEnd);
+    const parseAppleVersionStart = app.indexOf('    private func parseFetchedVersionIDs(');
+    const parseAppleVersionEnd = app.indexOf('\n    private func refreshDownloadedFiles()', parseAppleVersionStart);
+    const parseAppleVersion = app.slice(parseAppleVersionStart, parseAppleVersionEnd);
 
     assert.notEqual(tvPolicyStart, -1, 'Apple TV response policy should exist');
     assert.notEqual(tvPolicyEnd, -1, 'Apple TV response policy should end before the default policy');
@@ -338,6 +341,11 @@ test('Apple TV history exposes every trusted version ID and permits multi-versio
         /request\.isAppleTV\s*\?\s*String\(localized: "Apple TV 历史版本目前仅由 Apple 来源提供，请重试或输入手动版本 ID。"\)\s*:\s*String\(localized: "未能从 Apple 获取版本，请改用其他来源。"\)/,
         'Apple TV must not receive the generic alternative-source guidance',
     );
+    assert.notEqual(parseAppleVersionStart, -1, 'Apple version response parser should exist');
+    assert.notEqual(parseAppleVersionEnd, -1, 'Apple version response parser should end before download-library refresh');
+    assert.match(parseAppleVersion, /versionDetails/);
+    assert.match(parseAppleVersion, /sizeBytes/);
+    assert.match(parseAppleVersion, /formatByteString/);
 });
 
 test('ordinary download failures publish a consumable alert that retries the original configuration', async () => {
