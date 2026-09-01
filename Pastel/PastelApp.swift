@@ -1397,6 +1397,7 @@ final class DownloadManager: ObservableObject {
         let label: String
         let platform: String
         let log: String
+        let config: RunConfig
     }
 
     struct Job: Identifiable {
@@ -1506,8 +1507,8 @@ final class DownloadManager: ObservableObject {
     }
 
     func retryFailedDownload(_ failure: FailureEvent) {
-        guard let config = configs[failure.jobID], !config.listVersionIDs else { return }
-        start(id: failure.jobID, label: failure.label, config: config)
+        guard !failure.config.listVersionIDs else { return }
+        start(id: failure.jobID, label: failure.label, config: failure.config)
     }
 
     func submitCode(id: String, code: String) {
@@ -1576,7 +1577,8 @@ final class DownloadManager: ObservableObject {
             jobID: job.id,
             label: job.label,
             platform: job.platform,
-            log: job.log
+            log: job.log,
+            config: config
         )
     }
 
@@ -2143,6 +2145,7 @@ struct ContentView: View {
     @State private var pendingVerificationCode = ""
     @State private var showingVerificationPrompt = false
     @State private var pendingCodeJobID: String?
+    @State private var presentedDownloadFailure: DownloadManager.FailureEvent?
     @State private var saveMessage = ""
     @State private var didLoadCredentials = false
     @State private var hoveredMode: RightPanelMode?
@@ -2296,6 +2299,9 @@ struct ContentView: View {
                 showingVerificationPrompt = true
             }
         }
+        .onChange(of: downloads.latestDownloadFailure?.id) { _, _ in
+            presentPendingDownloadFailureIfNeeded()
+        }
         .onChange(of: downloadDir) { _, _ in refreshDownloadedFiles() }
         .onChange(of: catalog.versionResults) { _, results in
             refreshDownloadedFiles()
@@ -2345,27 +2351,23 @@ struct ContentView: View {
             Text(String(localized: "Apple 无法区分密码错误与双重认证。请检查密码；如果已收到验证码，也可以直接输入。"))
         }
         .alert(
-            String(localized: "下载失败：\(downloads.latestDownloadFailure?.label ?? "")"),
+            String(localized: "下载失败：\(presentedDownloadFailure?.label ?? "")"),
             isPresented: Binding(
-                get: { downloads.latestDownloadFailure != nil },
-                set: { isPresented in
-                    if !isPresented, let failure = downloads.latestDownloadFailure {
-                        downloads.consumeDownloadFailure(failure)
-                    }
-                }
+                get: { presentedDownloadFailure != nil },
+                set: { if !$0 { dismissDownloadFailureAlert() } }
             ),
-            presenting: downloads.latestDownloadFailure
+            presenting: presentedDownloadFailure
         ) { failure in
             Button(String(localized: "关闭"), role: .cancel) {
-                downloads.consumeDownloadFailure(failure)
+                dismissDownloadFailureAlert()
             }
             Button(String(localized: "重试")) {
-                downloads.consumeDownloadFailure(failure)
+                dismissDownloadFailureAlert()
                 downloads.retryFailedDownload(failure)
             }
             if downloadRequiresRelogin(from: failure.log) {
                 Button(String(localized: "登录")) {
-                    downloads.consumeDownloadFailure(failure)
+                    dismissDownloadFailureAlert()
                     showRelogin()
                 }
             }
@@ -2409,6 +2411,20 @@ struct ContentView: View {
 
     private func showSettings() {
         openWindow(id: "settings")
+    }
+
+    private func presentPendingDownloadFailureIfNeeded() {
+        guard presentedDownloadFailure == nil else { return }
+        presentedDownloadFailure = downloads.latestDownloadFailure
+    }
+
+    private func dismissDownloadFailureAlert() {
+        guard let failure = presentedDownloadFailure else { return }
+        presentedDownloadFailure = nil
+        downloads.consumeDownloadFailure(failure)
+        DispatchQueue.main.async {
+            presentPendingDownloadFailureIfNeeded()
+        }
     }
 
     private func showRelogin() {

@@ -352,16 +352,22 @@ test('ordinary download failures publish a consumable alert that retries the ori
     assert.notEqual(managerStart, -1, 'DownloadManager should exist');
     assert.notEqual(managerEnd, -1, 'DownloadManager should end before AppSearchResult');
     assert.match(manager, /struct\s+FailureEvent:\s*Identifiable/);
+    assert.match(manager, /let\s+config:\s*RunConfig/);
     assert.match(manager, /@Published\s+private\(set\)\s+var\s+latestDownloadFailure:\s*FailureEvent\?/);
     assert.match(manager, /guard\s+!config\.listVersionIDs\s+else\s+\{\s*return\s*\}/);
-    assert.match(manager, /func\s+retryFailedDownload\([^)]*FailureEvent[^)]*\)[^{]*\{[\s\S]*?configs\[failure\.jobID\][\s\S]*?start\(id:\s*failure\.jobID,\s*label:\s*failure\.label,\s*config:\s*config\)/);
+    assert.match(manager, /func\s+retryFailedDownload\([^)]*FailureEvent[^)]*\)[^{]*\{[\s\S]*?start\(id:\s*failure\.jobID,\s*label:\s*failure\.label,\s*config:\s*failure\.config\)/);
+    assert.doesNotMatch(manager, /func\s+retryFailedDownload\([^)]*FailureEvent[^)]*\)[^{]*\{[\s\S]*?configs\[failure\.jobID\]/);
 
     assert.notEqual(contentStart, -1, 'ContentView should exist');
     assert.notEqual(contentEnd, -1, 'ContentView should include its download alert');
-    assert.match(content, /\.alert\([\s\S]*?isPresented:\s*Binding\([\s\S]*?downloads\.latestDownloadFailure\s*!=\s*nil[\s\S]*?presenting:\s*downloads\.latestDownloadFailure/);
-    assert.match(content, /下载失败：\\\(downloads\.latestDownloadFailure\?\.label \?\?/);
+    assert.match(content, /@State\s+private\s+var\s+presentedDownloadFailure:\s*DownloadManager\.FailureEvent\?/);
+    assert.match(content, /\.alert\([\s\S]*?isPresented:\s*Binding\([\s\S]*?presentedDownloadFailure\s*!=\s*nil[\s\S]*?presenting:\s*presentedDownloadFailure/);
+    assert.match(content, /func\s+dismissDownloadFailureAlert\(\)[\s\S]*?guard\s+let\s+failure\s*=\s*presentedDownloadFailure[\s\S]*?presentedDownloadFailure\s*=\s*nil[\s\S]*?downloads\.consumeDownloadFailure\(failure\)/);
+    assert.match(content, /onChange\(of:\s*downloads\.latestDownloadFailure\?\.id\)/);
+    assert.match(content, /func\s+presentPendingDownloadFailureIfNeeded\(\)[\s\S]*?guard\s+presentedDownloadFailure\s*==\s*nil[\s\S]*?presentedDownloadFailure\s*=\s*downloads\.latestDownloadFailure/);
+    assert.match(content, /下载失败：\\\(presentedDownloadFailure\?\.label \?\?/);
     assert.match(content, /downloadErrorMessage\(from:\s*failure\.log,\s*platform:\s*failure\.platform\)/);
-    assert.match(content, /Button\(String\(localized:\s*"关闭"\),\s*role:\s*\.cancel\)\s*\{\s*downloads\.consumeDownloadFailure\(failure\)/);
-    assert.match(content, /Button\(String\(localized:\s*"重试"\)\)\s*\{\s*downloads\.consumeDownloadFailure\(failure\)[\s\S]*?downloads\.retryFailedDownload\(failure\)/);
+    assert.match(content, /Button\(String\(localized:\s*"关闭"\),\s*role:\s*\.cancel\)\s*\{\s*dismissDownloadFailureAlert\(\)/);
+    assert.match(content, /Button\(String\(localized:\s*"重试"\)\)\s*\{\s*dismissDownloadFailureAlert\(\)[\s\S]*?downloads\.retryFailedDownload\(failure\)/);
     assert.match(content, /if\s+downloadRequiresRelogin\(from:\s*failure\.log\)\s*\{[\s\S]*?showRelogin\(\)/);
 });
