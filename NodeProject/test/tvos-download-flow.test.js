@@ -75,6 +75,35 @@ test('requests a license only after Apple reports that the app license is missin
     }
 });
 
+test('recreates a missing persisted download directory before StoreServices work starts', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'idapastel-output-directory-'));
+    const downloadDirectory = join(root, 'Downloads', 'IDAPastel');
+    const stopAfterDirectoryCheck = new Error('stop after directory check');
+    let directoryExistedBeforeStoreServices = false;
+    const app = new Ipa(credentials);
+    app.user = {};
+    app.persistCurrentSession = async () => {};
+    app.resolveDownloadSong = async () => {
+        directoryExistedBeforeStoreServices = existsSync(downloadDirectory);
+        throw stopAfterDirectoryCheck;
+    };
+
+    try {
+        await assert.rejects(
+            () => app.runDownload({
+                dir: downloadDirectory,
+                APPID: '6503940939',
+                appVerId: '888154622',
+                platform: 'iphone',
+            }),
+            error => error === stopAfterDirectoryCheck,
+        );
+        assert.equal(directoryExistedBeforeStoreServices, true);
+    } finally {
+        rmSync(root, {recursive: true, force: true});
+    }
+});
+
 test('accepts an Apple TV version family anchored by the resolved latest version', async () => {
     const originalAppInfo = Store.AppInfo;
     Store.AppInfo = async () => ({

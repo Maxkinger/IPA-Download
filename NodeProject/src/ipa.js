@@ -337,6 +337,7 @@ export class Ipa {
     async runDownload({dir = '.', APPID, appVerId, platform = 'iphone'} = {}) {
         if (!this.user) throw new Error('Please login() first');
         this.dir = dir;
+        await fsPromises.mkdir(this.dir, {recursive: true});
         this.cache = await fsPromises.mkdtemp(path.join(os.tmpdir(), 'idapastel-download-parts-'));
         console.log(t('temp_dir', {cache: this.cache}));
         let primaryError = null;
