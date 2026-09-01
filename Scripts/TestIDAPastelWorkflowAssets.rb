@@ -30,9 +30,26 @@ check.call(release_step, "release step is missing")
 release_env = release_step.fetch("env")
 check.call(release_env["DMG_PATH"] == expected_paths[0], "release DMG must come from package output")
 check.call(release_env["CHECKSUM_PATH"] == expected_paths[1], "release checksum must come from package output")
+release_notes = release_env["RELEASE_NOTES"]
+check.call(release_notes.is_a?(String), "release notes must be provided through RELEASE_NOTES")
+[
+  "将 IDAPastel.app 拖入 Applications 文件夹",
+  "Ad Hoc 方式分发，且未经过公证",
+  "仍要打开",
+  "右键",
+  "“打开”",
+  "Apple 芯片（arm64）",
+  "Apple TV/tvOS IPA",
+  "不负责安装或部署",
+  "SHA-256",
+  ".sha256 校验文件"
+].each do |required_topic|
+  check.call(release_notes.include?(required_topic), "release notes must explain: #{required_topic}")
+end
 release_command = release_step.fetch("run")
 check.call(release_command.include?('"$DMG_PATH"'), "release DMG path must be quoted")
 check.call(release_command.include?('"$CHECKSUM_PATH"'), "release checksum path must be quoted")
+check.call(release_command.include?('--notes "$RELEASE_NOTES"'), "release command must publish RELEASE_NOTES")
 
 publication_source = [upload_step.fetch("with").fetch("path"), release_command].join("\n")
 check.call(!publication_source.match?(%r{dist/[^\s]*\*}), "dist globs must not publish assets")
