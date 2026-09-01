@@ -27,6 +27,7 @@ check.call(configured_paths == expected_paths, "artifact upload must contain onl
 
 release_step = steps.find { |step| step["name"] == "Publish GitHub Release" }
 check.call(release_step, "release step is missing")
+check.call(release_step["if"] == "startsWith(github.ref, 'refs/tags/idapastel-v')", "release publication must be limited to idapastel-v tags")
 release_env = release_step.fetch("env")
 check.call(release_env["DMG_PATH"] == expected_paths[0], "release DMG must come from package output")
 check.call(release_env["CHECKSUM_PATH"] == expected_paths[1], "release checksum must come from package output")
@@ -48,6 +49,10 @@ check.call(release_notes.is_a?(String), "release notes must be provided through 
   check.call(release_notes.include?(required_topic), "release notes must explain: #{required_topic}")
 end
 release_command = release_step.fetch("run")
+check.call(
+  release_command.match?(%r{\Agh release create "\$GITHUB_REF_NAME" "\$DMG_PATH" "\$CHECKSUM_PATH" --}),
+  "release command must publish exactly the verified DMG and checksum assets before flags"
+)
 check.call(release_command.include?('"$DMG_PATH"'), "release DMG path must be quoted")
 check.call(release_command.include?('"$CHECKSUM_PATH"'), "release checksum path must be quoted")
 check.call(release_command.include?('--notes "$RELEASE_NOTES"'), "release command must publish RELEASE_NOTES")

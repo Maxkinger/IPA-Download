@@ -54,3 +54,31 @@ None. The existing `idapastel-v*` publication gate and the exact package-output 
   ```
 
   Result: passed. The focused test printed `PASS workflow publishes only the exact verified DMG pair`; the Node suite reported 48 passing tests and 0 failures; `git diff --check` produced no output.
+
+## Final-review fix record
+
+- Added an exact assertion that the release step has `if: startsWith(github.ref, 'refs/tags/idapastel-v')`.
+- Added a command-shape assertion that requires exactly `"$GITHUB_REF_NAME" "$DMG_PATH" "$CHECKSUM_PATH"` immediately before the first release flag, preventing an extra positional release asset.
+- RED verification for the tag gate used a temporary workflow-only mutation:
+
+  ```sh
+  ruby Scripts/TestIDAPastelWorkflowAssets.rb
+  ```
+
+  Result: failed as expected with `release publication must be limited to idapastel-v tags` after changing the gate to `refs/tags/v`. The gate was restored.
+
+- RED verification for the release assets used a second temporary workflow-only mutation:
+
+  ```sh
+  ruby Scripts/TestIDAPastelWorkflowAssets.rb
+  ```
+
+  Result: failed as expected with `release command must publish exactly the verified DMG and checksum assets before flags` after inserting an extra `"$DMG_PATH"` positional asset. The command was restored.
+
+- Restored-tree verification:
+
+  ```sh
+  ruby Scripts/TestIDAPastelWorkflowAssets.rb && npm test --prefix NodeProject && git diff --check
+  ```
+
+  Result: passed. The focused test printed `PASS workflow publishes only the exact verified DMG pair`; the Node suite reported 48 passing tests and 0 failures; `git diff --check` produced no output.
