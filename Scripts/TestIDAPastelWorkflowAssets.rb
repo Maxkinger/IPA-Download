@@ -31,7 +31,7 @@ check.call(release_step["if"] == "startsWith(github.ref, 'refs/tags/idapastel-v'
 release_env = release_step.fetch("env")
 check.call(release_env["DMG_PATH"] == expected_paths[0], "release DMG must come from package output")
 check.call(release_env["CHECKSUM_PATH"] == expected_paths[1], "release checksum must come from package output")
-release_notes = release_env["RELEASE_NOTES"]
+release_notes = workflow.fetch("jobs").fetch("build").fetch("env").fetch("RELEASE_NOTES")
 check.call(release_notes.is_a?(String), "release notes must be provided through RELEASE_NOTES")
 [
   "将 IDAPastel.app 拖入 Applications 文件夹",
@@ -50,14 +50,24 @@ check.call(release_notes.is_a?(String), "release notes must be provided through 
 end
 release_command = release_step.fetch("run")
 check.call(
-  release_command.match?(%r{\Agh release create "\$GITHUB_REF_NAME" "\$DMG_PATH" "\$CHECKSUM_PATH" --}),
-  "release command must publish exactly the verified DMG and checksum assets before flags"
+  release_command.strip == 'gh release create "$GITHUB_REF_NAME" "$DMG_PATH" "$CHECKSUM_PATH" --notes "$RELEASE_NOTES" --title "IDAPastel $GITHUB_REF_NAME"',
+  "tag release command must publish exactly the verified DMG and checksum assets"
 )
-check.call(release_command.include?('"$DMG_PATH"'), "release DMG path must be quoted")
-check.call(release_command.include?('"$CHECKSUM_PATH"'), "release checksum path must be quoted")
-check.call(release_command.include?('--notes "$RELEASE_NOTES"'), "release command must publish RELEASE_NOTES")
 
-publication_source = [upload_step.fetch("with").fetch("path"), release_command].join("\n")
+tv_release_step = steps.find { |step| step["name"] == "Publish tv Build Release" }
+check.call(tv_release_step, "tv build release step is missing")
+check.call(tv_release_step["if"] == "github.ref == 'refs/heads/tv'", "tv build release must be limited to tv branch pushes")
+tv_release_env = tv_release_step.fetch("env")
+check.call(tv_release_env["DMG_PATH"] == expected_paths[0], "tv build release DMG must come from package output")
+check.call(tv_release_env["CHECKSUM_PATH"] == expected_paths[1], "tv build release checksum must come from package output")
+check.call(tv_release_env["RELEASE_TAG"] == "idapastel-build-${{ github.run_id }}-${{ github.run_attempt }}", "tv build release tag must be unique per run attempt")
+tv_release_command = tv_release_step.fetch("run")
+check.call(
+  tv_release_command.strip == 'gh release create "$RELEASE_TAG" "$DMG_PATH" "$CHECKSUM_PATH" --target "$GITHUB_SHA" --prerelease --notes "$RELEASE_NOTES" --title "IDAPastel build $GITHUB_RUN_NUMBER"',
+  "tv build release command must publish exactly the verified DMG and checksum assets"
+)
+
+publication_source = [upload_step.fetch("with").fetch("path"), release_command, tv_release_command].join("\n")
 check.call(!publication_source.match?(%r{dist/[^\s]*\*}), "dist globs must not publish assets")
 
 sample_outputs = {

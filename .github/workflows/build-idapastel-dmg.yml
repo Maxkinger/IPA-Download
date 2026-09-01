@@ -18,6 +18,21 @@ concurrency:
 jobs:
   build:
     runs-on: macos-26
+    env:
+      RELEASE_NOTES: |
+        ## 安装与兼容性
+
+        打开 DMG 后，将 IDAPastel.app 拖入 Applications 文件夹。
+        此自用构建以 Ad Hoc 方式分发，且未经过公证；首次启动如被 macOS 阻止，请在“隐私与安全性”中选择“仍要打开”，或右键 IDAPastel.app 后选择“打开”。
+        仅支持配备 Apple 芯片（arm64）的 Mac。
+
+        ## Apple TV IPA 范围
+
+        IDAPastel 用于搜索、下载并校验 Apple TV/tvOS IPA；IDAPastel 不负责安装或部署 tvOS IPA，该流程不属于本应用范围。
+
+        ## 校验下载
+
+        下载后请使用随附的 .sha256 校验文件核验 DMG 的 SHA-256 值。
     steps:
       - uses: actions/checkout@v4
 
@@ -106,18 +121,13 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           DMG_PATH: ${{ steps.package.outputs.dmg }}
           CHECKSUM_PATH: ${{ steps.package.outputs.checksum }}
-          RELEASE_NOTES: |
-            ## 安装与兼容性
-
-            打开 DMG 后，将 IDAPastel.app 拖入 Applications 文件夹。
-            此自用构建以 Ad Hoc 方式分发，且未经过公证；首次启动如被 macOS 阻止，请在“隐私与安全性”中选择“仍要打开”，或右键 IDAPastel.app 后选择“打开”。
-            仅支持配备 Apple 芯片（arm64）的 Mac。
-
-            ## Apple TV IPA 范围
-
-            IDAPastel 用于搜索、下载并校验 Apple TV/tvOS IPA；IDAPastel 不负责安装或部署 tvOS IPA，该流程不属于本应用范围。
-
-            ## 校验下载
-
-            下载后请使用随附的 .sha256 校验文件核验 DMG 的 SHA-256 值。
         run: gh release create "$GITHUB_REF_NAME" "$DMG_PATH" "$CHECKSUM_PATH" --notes "$RELEASE_NOTES" --title "IDAPastel $GITHUB_REF_NAME"
+
+      - name: Publish tv Build Release
+        if: github.ref == 'refs/heads/tv'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DMG_PATH: ${{ steps.package.outputs.dmg }}
+          CHECKSUM_PATH: ${{ steps.package.outputs.checksum }}
+          RELEASE_TAG: idapastel-build-${{ github.run_id }}-${{ github.run_attempt }}
+        run: gh release create "$RELEASE_TAG" "$DMG_PATH" "$CHECKSUM_PATH" --target "$GITHUB_SHA" --prerelease --notes "$RELEASE_NOTES" --title "IDAPastel build $GITHUB_RUN_NUMBER"
