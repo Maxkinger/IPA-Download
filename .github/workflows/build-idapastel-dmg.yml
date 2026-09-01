@@ -81,12 +81,29 @@ jobs:
       - name: Test workflow asset selection
         run: ruby Scripts/TestIDAPastelWorkflowAssets.rb
 
+      - name: Resolve build version
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+          versions=$(sed -n 's/^[[:space:]]*MARKETING_VERSION = \([^;]*\);$/\1/p' Pastel.xcodeproj/project.pbxproj | sort -u)
+          version_count=$(printf '%s\n' "$versions" | awk 'NF { count += 1 } END { print count + 0 }')
+          test "$version_count" -eq 1
+          app_version="$versions"
+          [[ "$app_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          if [[ "$GITHUB_REF" == refs/tags/idapastel-v* ]]; then
+            tag_version="${GITHUB_REF_NAME#idapastel-v}"
+            test "$tag_version" = "$app_version"
+          fi
+          printf 'app_version=%s\n' "$app_version" >> "$GITHUB_OUTPUT"
+
       - name: Build IDAPastel
         run: |
           xcodebuild -project Pastel.xcodeproj \
             -scheme IDAPastel \
             -configuration Release \
             -derivedDataPath "$RUNNER_TEMP/DerivedData" \
+            CURRENT_PROJECT_VERSION="$GITHUB_RUN_NUMBER" \
             CODE_SIGN_IDENTITY=- \
             build
 
@@ -119,15 +136,17 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/idapastel-v')
         env:
           GH_TOKEN: ${{ github.token }}
+          APP_VERSION: ${{ steps.version.outputs.app_version }}
           DMG_PATH: ${{ steps.package.outputs.dmg }}
           CHECKSUM_PATH: ${{ steps.package.outputs.checksum }}
-        run: gh release create "$GITHUB_REF_NAME" "$DMG_PATH" "$CHECKSUM_PATH" --notes "$RELEASE_NOTES" --title "IDAPastel $GITHUB_REF_NAME"
+        run: gh release create "$GITHUB_REF_NAME" "$DMG_PATH" "$CHECKSUM_PATH" --notes "$RELEASE_NOTES" --title "IDAPastel $APP_VERSION"
 
       - name: Publish tv Build Release
         if: github.ref == 'refs/heads/tv'
         env:
           GH_TOKEN: ${{ github.token }}
+          APP_VERSION: ${{ steps.version.outputs.app_version }}
           DMG_PATH: ${{ steps.package.outputs.dmg }}
           CHECKSUM_PATH: ${{ steps.package.outputs.checksum }}
           RELEASE_TAG: idapastel-build-${{ github.run_id }}-${{ github.run_attempt }}
-        run: gh release create "$RELEASE_TAG" "$DMG_PATH" "$CHECKSUM_PATH" --target "$GITHUB_SHA" --prerelease --notes "$RELEASE_NOTES" --title "IDAPastel build $GITHUB_RUN_NUMBER"
+        run: gh release create "$RELEASE_TAG" "$DMG_PATH" "$CHECKSUM_PATH" --target "$GITHUB_SHA" --prerelease --notes "$RELEASE_NOTES" --title "IDAPastel $APP_VERSION (Build $GITHUB_RUN_NUMBER)"

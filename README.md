@@ -5,7 +5,7 @@
   <p>搜索 App、查找历史版本，并将 IPA 轻松传输到 iPhone 或 iPad。</p>
 
   <p>
-    <img src="https://img.shields.io/badge/version-20260831-0A84FF?style=flat-square" alt="Version 20260831">
+    <img src="https://img.shields.io/badge/version-1.0.0-0A84FF?style=flat-square" alt="Version 1.0.0">
     <img src="https://img.shields.io/badge/macOS-26%2B-111111?style=flat-square&logo=apple" alt="macOS 26 or later">
     <img src="https://img.shields.io/badge/Apple%20Silicon-required-111111?style=flat-square&logo=apple" alt="Apple Silicon required">
     <img src="https://img.shields.io/badge/license-Apache--2.0-6B7280?style=flat-square" alt="Apache 2.0 License">
@@ -26,9 +26,9 @@
 ---
 
 > [!IMPORTANT]
-> **2026 年 8 月 31 日更新通知**
+> **1.0.0 版本说明**
 >
-> IDAPastel 已尝试适配 Apple 最新的账户登录调整，当前登录协议与安全检查参考 [majd/ipatool](https://github.com/majd/ipatool)。20260831 是强制更新版本，请务必下载最新版。新的认证方式要求在真实的 Apple Silicon Mac 上运行；虚拟机环境仍然无法登录或下载 IPA。
+> IDAPastel 已尝试适配 Apple 最新的账户登录调整，当前登录协议与安全检查参考 [majd/ipatool](https://github.com/majd/ipatool)。当前功能版本为 1.0.0；GitHub Actions 会为每次构建自动分配独立的构建编号。新的认证方式要求在真实的 Apple Silicon Mac 上运行；虚拟机环境仍然无法登录或下载 IPA。
 
 ## IDAPastel 能做什么
 
