@@ -19,6 +19,62 @@ test('resolves only an implicit Apple TV version', async () => {
     assert.equal(await app.resolveAppVersionID('42', '', 'iphone'), '');
 });
 
+test('uses the existing StoreServices download license before attempting purchase', async () => {
+    const app = new Ipa(credentials);
+    const events = [];
+    const song = {URL: 'https://example.test/forward.ipa'};
+    const originalPurchase = Store.purchase;
+
+    app.info = async () => {
+        events.push('download-info');
+        return song;
+    };
+    Store.purchase = async () => {
+        events.push('purchase');
+        throw new Error('purchase should not be attempted for an existing license');
+    };
+
+    try {
+        const result = await app.resolveDownloadSong('6503940939', '888154622');
+        assert.equal(result, song);
+        assert.deepEqual(events, ['download-info']);
+    } finally {
+        Store.purchase = originalPurchase;
+    }
+});
+
+test('requests a license only after Apple reports that the app license is missing', async () => {
+    const app = new Ipa(credentials);
+    const events = [];
+    const song = {URL: 'https://example.test/forward.ipa'};
+    const originalPurchase = Store.purchase;
+    let infoAttempts = 0;
+
+    app.info = async () => {
+        infoAttempts += 1;
+        events.push(`download-info-${infoAttempts}`);
+        if (infoAttempts === 1) {
+            const error = new Error('license is required');
+            error.code = 'LICENSE_REQUIRED';
+            throw error;
+        }
+        return song;
+    };
+    app.isFreeApp = async () => true;
+    Store.purchase = async () => {
+        events.push('purchase');
+        return {customerMessage: 'license acquired'};
+    };
+
+    try {
+        const result = await app.resolveDownloadSong('6503940939', '888154622');
+        assert.equal(result, song);
+        assert.deepEqual(events, ['download-info-1', 'purchase', 'download-info-2']);
+    } finally {
+        Store.purchase = originalPurchase;
+    }
+});
+
 test('accepts an Apple TV version family anchored by the resolved latest version', async () => {
     const originalAppInfo = Store.AppInfo;
     Store.AppInfo = async () => ({

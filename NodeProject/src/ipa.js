@@ -52,6 +52,12 @@ function localizedTVError(error) {
     return localized;
 }
 
+function isLicenseRequiredError(error) {
+    return error?.code === 'LICENSE_REQUIRED'
+        || String(error?.failureType || '') === '9610'
+        || /license\s+(?:not found|required)/i.test(String(error?.customerMessage || error?.message || ''));
+}
+
 function appSupportDir() {
     if (process.env.IPA_SESSION_DIR) return process.env.IPA_SESSION_DIR;
     if (process.platform === 'darwin') {
@@ -265,7 +271,7 @@ export class Ipa {
         let song = await Store.AppInfo(APPID, resolvedVersionID, this.auth).catch(error => ({_error: error}));
         if (song?._error) {
             // 用稳定的 error.code 判断「缺少许可」，不依赖文案语言；Apple 自身英文消息保留兜底。
-            const noLicense = song._error.code === 'APPINFO_FAIL' || /License not found/i.test(song._error.message || '');
+            const noLicense = isLicenseRequiredError(song._error);
             if (!noLicense) throw song._error;
             // 缺少许可：仅免费 App 才主动申请；付费且未购买的 App 直接报错、绝不触发购买。
             if (!(await this.isFreeApp(APPID))) {
@@ -311,6 +317,23 @@ export class Ipa {
         };
     }
 
+    async resolveDownloadSong(APPID, appVerId) {
+        try {
+            // A previously acquired app can remain downloadable after it is
+            // delisted. Query the download product first so that this path
+            // does not depend on the public App Store listing or buyProduct.
+            return await this.info(APPID, appVerId);
+        } catch (error) {
+            if (!isLicenseRequiredError(error)) throw error;
+            if (!(await this.isFreeApp(APPID))) {
+                throw new Error(t('paid_not_purchased'));
+            }
+            const purchaseResult = await Store.purchase(APPID, appVerId, this.auth);
+            console.log(t('purchase_ok', {message: purchaseResult.customerMessage}));
+            return await this.info(APPID, appVerId);
+        }
+    }
+
     async runDownload({dir = '.', APPID, appVerId, platform = 'iphone'} = {}) {
         if (!this.user) throw new Error('Please login() first');
         this.dir = dir;
@@ -319,9 +342,7 @@ export class Ipa {
         let primaryError = null;
         try {
             const resolvedVersionID = await this.resolveAppVersionID(APPID, appVerId, platform);
-            const purchaseResult = await Store.purchase(APPID, resolvedVersionID, this.auth);
-            console.log(t('purchase_ok', {message: purchaseResult.customerMessage}));
-            const song = await this.info(APPID, resolvedVersionID);
+            const song = await this.resolveDownloadSong(APPID, resolvedVersionID);
             const res = await download(song.URL, this.out, this.cache, this.auth.authHeaders || {});
             console.log(t('download_complete', {mb: (res.fileSize / 1024 / 1024).toFixed(2), parts: res.parts}));
             await this.validateDownloadedPackage(platform);

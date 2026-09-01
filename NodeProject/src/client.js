@@ -31,12 +31,18 @@ function isPasswordTokenExpiredMessage(message) {
 // failures. Apple does not consistently include an English error message, so
 // relying on customerMessage alone leaves some expired sessions undetected.
 const AUTH_FAILURE_TYPES = new Set(['-5000', '1008', '2002', '2034', '2042']);
+const LICENSE_REQUIRED_FAILURE_TYPES = new Set(['9610']);
 
 export function isAuthFailureResponse(failureType, customerMessage, statusCode = 200) {
     return statusCode === 401
         || statusCode === 403
         || AUTH_FAILURE_TYPES.has(String(failureType || ''))
         || isPasswordTokenExpiredMessage(customerMessage);
+}
+
+export function isLicenseRequiredResponse(failureType, customerMessage) {
+    return LICENSE_REQUIRED_FAILURE_TYPES.has(String(failureType || ''))
+        || /license\s+(?:not found|required)/i.test(String(customerMessage || ''));
 }
 
 const _endpoints = {
@@ -142,6 +148,15 @@ class Store {
         }
         if (isAuthFailureResponse(parsedResp.failureType, parsedResp.customerMessage)) {
             throw tokenExpiredError();
+        }
+        if (isLicenseRequiredResponse(parsedResp.failureType, parsedResp.customerMessage)) {
+            const e = new Error(t('appinfo_custom', {
+                msg: parsedResp.customerMessage || 'License not found',
+            }));
+            e.code = 'LICENSE_REQUIRED';
+            e.failureType = String(parsedResp.failureType || '');
+            e.customerMessage = String(parsedResp.customerMessage || '');
+            throw e;
         }
         if (parsedResp.customerMessage) {
             const e = new Error(t('appinfo_custom', {msg: parsedResp.customerMessage}));
