@@ -35,3 +35,22 @@
 ## Concerns
 
 None. The existing `idapastel-v*` publication gate and the exact package-output DMG/checksum paths are unchanged. `--generate-notes` was intentionally replaced by the requested custom Simplified Chinese notes.
+
+## Review-fix record
+
+- Added the focused `"搜索、下载并校验"` assertion for `RELEASE_NOTES`, so the Apple TV/tvOS IPA download scope cannot be removed without failing the workflow test.
+- RED verification used a temporary workflow-only mutation that replaced `搜索、下载并校验` with `处理`:
+
+  ```sh
+  ruby Scripts/TestIDAPastelWorkflowAssets.rb
+  ```
+
+  Result: failed as expected with `release notes must explain: 搜索、下载并校验`. The temporary mutation was restored before the fixed-tree checks.
+
+- Fixed-tree verification:
+
+  ```sh
+  ruby Scripts/TestIDAPastelWorkflowAssets.rb && npm test --prefix NodeProject && git diff --check
+  ```
+
+  Result: passed. The focused test printed `PASS workflow publishes only the exact verified DMG pair`; the Node suite reported 48 passing tests and 0 failures; `git diff --check` produced no output.

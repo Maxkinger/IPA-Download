@@ -40,6 +40,7 @@ check.call(release_notes.is_a?(String), "release notes must be provided through 
   "“打开”",
   "Apple 芯片（arm64）",
   "Apple TV/tvOS IPA",
+  "搜索、下载并校验",
   "不负责安装或部署",
   "SHA-256",
   ".sha256 校验文件"
