@@ -1572,7 +1572,7 @@ final class DownloadManager: ObservableObject {
     }
 
     private func publishDownloadFailure(for job: Job, config: RunConfig) {
-        guard !config.listVersionIDs else { return }
+        guard !config.listVersionIDs, !job.needsCode else { return }
         latestDownloadFailure = FailureEvent(
             jobID: job.id,
             label: job.label,

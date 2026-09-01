@@ -354,7 +354,7 @@ test('ordinary download failures publish a consumable alert that retries the ori
     assert.match(manager, /struct\s+FailureEvent:\s*Identifiable/);
     assert.match(manager, /let\s+config:\s*RunConfig/);
     assert.match(manager, /@Published\s+private\(set\)\s+var\s+latestDownloadFailure:\s*FailureEvent\?/);
-    assert.match(manager, /guard\s+!config\.listVersionIDs\s+else\s+\{\s*return\s*\}/);
+    assert.match(manager, /guard\s+!config\.listVersionIDs,\s*!job\.needsCode\s+else\s+\{\s*return\s*\}/);
     assert.match(manager, /func\s+retryFailedDownload\([^)]*FailureEvent[^)]*\)[^{]*\{[\s\S]*?start\(id:\s*failure\.jobID,\s*label:\s*failure\.label,\s*config:\s*failure\.config\)/);
     assert.doesNotMatch(manager, /func\s+retryFailedDownload\([^)]*FailureEvent[^)]*\)[^{]*\{[\s\S]*?configs\[failure\.jobID\]/);
 
