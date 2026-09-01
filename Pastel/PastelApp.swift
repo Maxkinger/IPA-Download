@@ -1391,6 +1391,14 @@ final class AccountStore: ObservableObject {
 
 @MainActor
 final class DownloadManager: ObservableObject {
+    struct FailureEvent: Identifiable {
+        let id = UUID()
+        let jobID: String
+        let label: String
+        let platform: String
+        let log: String
+    }
+
     struct Job: Identifiable {
         let id: String
         var label: String
@@ -1404,6 +1412,7 @@ final class DownloadManager: ObservableObject {
     }
 
     @Published private(set) var jobs: [String: Job] = [:]
+    @Published private(set) var latestDownloadFailure: FailureEvent?
     private var processes: [String: Process] = [:]
     private var pipes: [String: (Pipe, Pipe)] = [:]
     private var configs: [String: RunConfig] = [:]
@@ -1426,7 +1435,9 @@ final class DownloadManager: ObservableObject {
         let runtime: (projectURL: URL, mainURL: URL, nodeURL: URL)
         do { runtime = try NodeRuntime.locate() }
         catch {
-            jobs[id] = Job(id: id, label: label, platform: config.platform, status: .failed, log: error.localizedDescription + "\n", progress: nil)
+            let job = Job(id: id, label: label, platform: config.platform, status: .failed, log: error.localizedDescription + "\n", progress: nil)
+            jobs[id] = job
+            publishDownloadFailure(for: job, config: config)
             return true
         }
 
@@ -1484,8 +1495,19 @@ final class DownloadManager: ObservableObject {
             j.status = .failed; j.progress = nil
             j.log += String(localized: "无法启动内置 Node：\(error.localizedDescription)") + "\n"
             jobs[id] = j
+            publishDownloadFailure(for: j, config: config)
         }
         return true
+    }
+
+    func consumeDownloadFailure(_ failure: FailureEvent) {
+        guard latestDownloadFailure?.id == failure.id else { return }
+        latestDownloadFailure = nil
+    }
+
+    func retryFailedDownload(_ failure: FailureEvent) {
+        guard let config = configs[failure.jobID], !config.listVersionIDs else { return }
+        start(id: failure.jobID, label: failure.label, config: config)
     }
 
     func submitCode(id: String, code: String) {
@@ -1542,7 +1564,20 @@ final class DownloadManager: ObservableObject {
             job.needsCode = ipaIsVerificationChallenge(job.log)
             job.log += "\n" + String(localized: "任务结束，退出码：\(Int(exitCode))") + "\n"
             jobs[id] = job
+            if let config = configs[id] {
+                publishDownloadFailure(for: job, config: config)
+            }
         }
+    }
+
+    private func publishDownloadFailure(for job: Job, config: RunConfig) {
+        guard !config.listVersionIDs else { return }
+        latestDownloadFailure = FailureEvent(
+            jobID: job.id,
+            label: job.label,
+            platform: job.platform,
+            log: job.log
+        )
     }
 
     private func cleanup(id: String) {
@@ -2308,6 +2343,34 @@ struct ContentView: View {
             }
         } message: {
             Text(String(localized: "Apple 无法区分密码错误与双重认证。请检查密码；如果已收到验证码，也可以直接输入。"))
+        }
+        .alert(
+            String(localized: "下载失败：\(downloads.latestDownloadFailure?.label ?? "")"),
+            isPresented: Binding(
+                get: { downloads.latestDownloadFailure != nil },
+                set: { isPresented in
+                    if !isPresented, let failure = downloads.latestDownloadFailure {
+                        downloads.consumeDownloadFailure(failure)
+                    }
+                }
+            ),
+            presenting: downloads.latestDownloadFailure
+        ) { failure in
+            Button(String(localized: "关闭"), role: .cancel) {
+                downloads.consumeDownloadFailure(failure)
+            }
+            Button(String(localized: "重试")) {
+                downloads.consumeDownloadFailure(failure)
+                downloads.retryFailedDownload(failure)
+            }
+            if downloadRequiresRelogin(from: failure.log) {
+                Button(String(localized: "登录")) {
+                    downloads.consumeDownloadFailure(failure)
+                    showRelogin()
+                }
+            }
+        } message: { failure in
+            Text("\(failure.label)\n\n\(downloadErrorMessage(from: failure.log, platform: failure.platform))")
         }
     }
 
