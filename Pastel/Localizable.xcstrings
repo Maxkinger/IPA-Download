@@ -717,6 +717,49 @@
         }
       }
     },
+    "Apple 服务器暂时不可用。请稍后再试。" : {
+
+    },
+    "Apple 未返回历史记录，已从官方 App Store 页面获取当前版本。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Apple did not return version history. The current version was loaded from the official App Store page."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Apple から履歴が返されなかったため、公式 App Store ページから現在のバージョンを取得しました。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Apple에서 버전 기록을 반환하지 않아 공식 App Store 페이지에서 현재 버전을 가져왔습니다."
+          }
+        },
+        "th" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Apple ไม่ส่งประวัติเวอร์ชันกลับมา จึงโหลดเวอร์ชันปัจจุบันจากหน้า App Store อย่างเป็นทางการ"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Apple 未傳回歷史記錄，已從官方 App Store 頁面取得目前版本。"
+          }
+        },
+        "zh-HK" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Apple 未傳回歷史記錄，已從官方 App Store 頁面取得目前版本。"
+          }
+        }
+      }
+    },
     "Apple 账户" : {
       "localizations" : {
         "en" : {
@@ -910,6 +953,9 @@
           }
         }
       }
+    },
+    "GitHub Star" : {
+
     },
     "IPA 会在此处保存。" : {
       "localizations" : {
@@ -1261,7 +1307,6 @@
       }
     },
     "下载失败" : {
-      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -1653,6 +1698,9 @@
           }
         }
       }
+    },
+    "不可用" : {
+
     },
     "从 GitHub 检查 Pastel 新版本。" : {
       "localizations" : {
@@ -2812,6 +2860,9 @@
         }
       }
     },
+    "前进" : {
+
+    },
     "功能切换" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -3049,6 +3100,7 @@
       }
     },
     "双重认证" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -3202,6 +3254,9 @@
           }
         }
       }
+    },
+    "后退" : {
+
     },
     "否" : {
       "localizations" : {
@@ -3598,6 +3653,12 @@
           }
         }
       }
+    },
+    "复制" : {
+
+    },
+    "复制设备 GUID" : {
+
     },
     "大小" : {
       "localizations" : {
@@ -4305,6 +4366,9 @@
           }
         }
       }
+    },
+    "已复制" : {
+
     },
     "已清除本地保存的账户" : {
       "extractionState" : "stale",
@@ -5578,6 +5642,9 @@
         }
       }
     },
+    "无法获取可靠的设备 GUID。为保护 Apple 账户，Pastel 已阻止登录。请确认正在使用真实 Mac，并在更新系统后重试。" : {
+
+    },
     "无法连接 Apple 服务器。请检查网络连接后再试。" : {
 
     },
@@ -5934,6 +6001,7 @@
       }
     },
     "未能从 Apple 获取版本，请改用其他来源。" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -6283,6 +6351,9 @@
           }
         }
       }
+    },
+    "查看下载错误" : {
+
     },
     "查看版本" : {
       "localizations" : {
@@ -7511,6 +7582,9 @@
         }
       }
     },
+    "添加账户" : {
+
+    },
     "清空" : {
       "localizations" : {
         "en" : {
@@ -8530,6 +8604,46 @@
         }
       }
     },
+    "获取并下载" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Get and Download"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "入手してダウンロード"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "받고 다운로드"
+          }
+        },
+        "th" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "รับและดาวน์โหลด"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "取得並下載"
+          }
+        },
+        "zh-HK" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "取得並下載"
+          }
+        }
+      }
+    },
     "获取版本列表" : {
       "localizations" : {
         "en" : {
@@ -8566,6 +8680,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "取得版本清單"
+          }
+        }
+      }
+    },
+    "要下载 %@，需要先从 Apple 免费获取此 App。是否继续？" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "To download %@, first get this free app from Apple. Continue?"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@をダウンロードするには、まずAppleからこの無料Appを入手する必要があります。続けますか？"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@을(를) 다운로드하려면 먼저 Apple에서 이 무료 App을 받아야 합니다. 계속하시겠습니까?"
+          }
+        },
+        "th" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "หากต้องการดาวน์โหลด %@ ต้องรับ App ฟรีนี้จาก Apple ก่อน ดำเนินการต่อหรือไม่?"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "要下載 %@，需要先從 Apple 免費取得此 App。是否繼續？"
+          }
+        },
+        "zh-HK" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "要下載 %@，需要先從 Apple 免費取得此 App。是否繼續？"
           }
         }
       }
@@ -9800,6 +9954,9 @@
         }
       }
     },
+    "选择账户 %@" : {
+
+    },
     "通过 AirDrop 发送" : {
       "localizations" : {
         "en" : {
@@ -9841,7 +9998,6 @@
       }
     },
     "重试下载" : {
-      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -9921,9 +10077,6 @@
           }
         }
       }
-    },
-    "需要完成 Apple 账户双重认证。请输入验证码后继续。" : {
-
     },
     "需要获取 App" : {
       "localizations" : {

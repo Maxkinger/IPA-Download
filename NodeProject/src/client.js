@@ -45,15 +45,53 @@ export function isLicenseRequiredResponse(failureType, customerMessage) {
         || /license\s+(?:not found|required)/i.test(String(customerMessage || ''));
 }
 
+export function appInfoFailureCode(failureType, customerMessage) {
+    const type = String(failureType || '');
+    const message = String(customerMessage || '').replace(/\u00a0/g, ' ');
+    if (type === '9610') return 'LICENSE_NOT_FOUND';
+    if (type === '2059') return 'APPINFO_BUSY';
+    if (/License not found|Redownload Unavailable with This Apple Account/i.test(message)) {
+        return 'LICENSE_NOT_FOUND';
+    }
+    return type || customerMessage ? 'APPINFO_FAIL' : '';
+}
+
+export function purchaseSuccessKind(response) {
+    const failureType = String(response?.failureType || '');
+    const customerMessage = String(response?.customerMessage || '').replace(/\u00a0/g, ' ');
+
+    // buyProduct is idempotent for an App already in the account library, but
+    // failureType 5002 is also used for unrelated StoreServices failures. Only
+    // accept it when Apple explicitly says that the license already exists.
+    if (failureType === '5002'
+        && /License already exists|already (?:in (?:your|the) library|owned|purchased)/i.test(customerMessage)) {
+        return 'existing';
+    }
+
+    // Match ApplePackage's strict purchase contract. HTTP 500, status=0 by
+    // itself, or a failureType must never be promoted to a successful purchase.
+    if (!failureType
+        && response?._httpStatus === 200
+        && response?.jingleDocType === 'purchaseSuccess'
+        && response?.status === 0) {
+        return 'new';
+    }
+    return '';
+}
+
 const _endpoints = {
     AppInfo: {
         url: (guid, pod) => `https://${podPrefix(pod)}buy.itunes.apple.com/WebObjects/MZFinance.woa/wa/volumeStoreDownloadProduct?guid=${guid}`,
-        buildBody: ({appIdentifier, appVerId, guid}) => ({
+        buildBody: ({appIdentifier, appVerId, guid, redownload = false}) => ({
             creditDisplay: '',
             guid,
             salableAdamId: appIdentifier,
-            ...(appVerId && {externalVersionId: appVerId}),
+            ...(!redownload && {serialNumber: '0'}),
+            ...(appVerId && {[redownload ? 'appExtVrsId' : 'externalVersionId']: appVerId}),
         }),
+    },
+    Redownload: {
+        url: (guid) => `https://downloaddispatch.itunes.apple.com/r/redownload?guid=${guid}`,
     },
     purchase: {
         url: (pod) => `https://${podPrefix(pod)}buy.itunes.apple.com/WebObjects/MZFinance.woa/wa/buyProduct`,
@@ -121,7 +159,7 @@ class Store {
         }
         if (isAuthFailureResponse('', '', res.status)) throw tokenExpiredError();
         try {
-            return parsePlistLoose(res.body, t('ctx_resp'));
+            return {...parsePlistLoose(res.body, t('ctx_resp')), _httpStatus: res.status};
         } catch (error) {
             const e = new Error(`${prefix}${t('bad_format_suffix', {message: error.message})}`);
             e.code = 'STORE_FAIL';
@@ -129,9 +167,8 @@ class Store {
         }
     }
 
-    static async AppInfo(appIdentifier, appVerId, authContext) {
+    static async AppInfo(appIdentifier, appVerId, authContext, {listVersions = false} = {}) {
         const endpoint = _endpoints.AppInfo;
-        const url = endpoint.url(this.guid, authContext?.pod);
         const dsid = authContext?.authHeaders?.['X-Dsid'];
         // 与 ipatool 一致：下载信息请求仅带 DSID 头 + 会话 cookie（不带 X-Token / storefront）。
         const headers = {
@@ -140,10 +177,30 @@ class Store {
             'iCloud-DSID': dsid,
             'X-Dsid': dsid,
         };
-        const parsedResp = this.#storePost(t('label_download_app'), url, endpoint.buildBody({appIdentifier, appVerId, guid: this.guid}), headers, authContext);
-        if (parsedResp.failureType === '5002') {
+        let parsedResp = this.#storePost(
+            t('label_download_app'),
+            endpoint.url(this.guid, authContext?.pod),
+            endpoint.buildBody({appIdentifier, appVerId, guid: this.guid}),
+            headers,
+            authContext
+        );
+        // Asspp/ApplePackage 的兼容路径：Apple 会对部分第三方 App 在主端点
+        // 返回 5002，近期也会返回 status=0 + 空 songList。两种情况都改走
+        // downloaddispatch 的 redownload 端点；Gemini 等 App 的历史数据在这里可用。
+        if (String(parsedResp.failureType || '') === '5002' || !parsedResp.songList?.[0]) {
+            const redownload = _endpoints.Redownload;
+            parsedResp = this.#storePost(
+                t('label_download_app'),
+                redownload.url(this.guid),
+                endpoint.buildBody({appIdentifier, appVerId, guid: this.guid, redownload: true}),
+                headers,
+                authContext
+            );
+        }
+        const failureCode = appInfoFailureCode(parsedResp.failureType, parsedResp.customerMessage);
+        if (failureCode === 'APPINFO_BUSY') {
             const e = new Error(t('appinfo_busy'));
-            e.code = 'APPINFO_FAIL';
+            e.code = failureCode;
             throw e;
         }
         if (isAuthFailureResponse(parsedResp.failureType, parsedResp.customerMessage)) {
@@ -160,12 +217,15 @@ class Store {
         }
         if (parsedResp.customerMessage) {
             const e = new Error(t('appinfo_custom', {msg: parsedResp.customerMessage}));
-            e.code = 'APPINFO_FAIL';
+            e.code = failureCode;
             throw e;
         }
         if (!parsedResp.songList?.[0]) {
             const e = new Error(t('appinfo_nodata'));
-            e.code = 'APPINFO_FAIL';
+            // Apple sometimes reports an unowned free App as status=0 with an
+            // empty songList instead of failureType=9610. Only the version-list
+            // path may interpret that response as a missing license candidate.
+            e.code = listVersions ? 'APPINFO_EMPTY' : 'APPINFO_FAIL';
             throw e;
         }
         return parsedResp;
@@ -174,27 +234,30 @@ class Store {
     static async purchase(appid, appVerId, authContext) {
         const endpoint = _endpoints.purchase;
         const url = endpoint.url(authContext?.pod);
-        // 先用 App Store 定价参数 STDQ，失败再用 Apple Arcade 的 GAME 重试一次。
+        // 对齐 ipatool：只有 2059（暂时不可用）才使用 Apple Arcade 的 GAME 参数重试。
         const headers = {
             'User-Agent': STORE_USER_AGENT,
             'Content-Type': 'application/x-apple-plist',
             ...(authContext?.authHeaders || {}),
         };
-        let lastMsg = '';
         for (const pricingParameters of ['STDQ', 'GAME']) {
             const parsedResp = this.#storePost(t('label_purchase'), url, endpoint.buildBody({appid, appVerId, guid: this.guid, pricingParameters}), headers, authContext);
-            if (parsedResp.status === 0 || parsedResp.failureType === '5002' || parsedResp.failureType === '2040') {
-                let message = t('lic_success');
-                if (parsedResp.failureType === '5002' || parsedResp.failureType === '2040') message = t('lic_in_library');
-                else if (parsedResp.status === 0) message = t('lic_new');
+            const successKind = purchaseSuccessKind(parsedResp);
+            if (successKind) {
+                const message = successKind === 'existing' ? t('lic_in_library') : t('lic_new');
                 return {...parsedResp, _state: 'success', customerMessage: message};
             }
             if (isAuthFailureResponse(parsedResp.failureType, parsedResp.customerMessage)) {
                 throw tokenExpiredError();
             }
-            lastMsg = parsedResp.customerMessage || t('lic_fail_msg');
+            if (parsedResp.failureType === '2059' && pricingParameters === 'STDQ') {
+                continue;
+            }
+            const e = new Error(t('license_failed', {msg: parsedResp.customerMessage || parsedResp.failureType || t('lic_fail_msg')}));
+            e.code = 'LICENSE_FAIL';
+            throw e;
         }
-        const e = new Error(t('license_failed', {msg: lastMsg}));
+        const e = new Error(t('license_failed', {msg: t('lic_fail_msg')}));
         e.code = 'LICENSE_FAIL';
         throw e;
     }

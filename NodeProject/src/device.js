@@ -4,9 +4,13 @@ import os from 'os';
 import path from 'path';
 import {existsSync, mkdirSync, readFileSync, writeFileSync} from 'fs';
 
-function normalizeGuid(value) {
+export function normalizeDeviceGuid(value) {
     const cleaned = String(value || '').replace(/[^0-9a-f]/gi, '').toUpperCase();
-    return cleaned.length >= 12 ? cleaned.slice(0, 12) : '';
+    if (cleaned.length !== 12) return '';
+    if (cleaned === '000000000000' || cleaned === '020000000000' || cleaned === 'FFFFFFFFFFFF') return '';
+    const firstByte = Number.parseInt(cleaned.slice(0, 2), 16);
+    if (!Number.isFinite(firstByte) || (firstByte & 1) !== 0) return '';
+    return cleaned;
 }
 
 function randomGuid() {
@@ -15,7 +19,7 @@ function randomGuid() {
 
 function systemGuid() {
     try {
-        return normalizeGuid(getMAC());
+        return normalizeDeviceGuid(getMAC());
     } catch {
         return '';
     }
@@ -46,13 +50,13 @@ function guidFile() {
 }
 
 export function getDeviceGuid() {
-    const envGuid = normalizeGuid(process.env.IPA_DEVICE_GUID);
+    const envGuid = normalizeDeviceGuid(process.env.IPA_DEVICE_GUID);
     if (envGuid) return envGuid;
 
     const file = guidFile();
     try {
         if (existsSync(file)) {
-            const saved = normalizeGuid(readFileSync(file, 'utf8'));
+            const saved = normalizeDeviceGuid(readFileSync(file, 'utf8'));
             if (saved) return saved;
         }
     } catch {
