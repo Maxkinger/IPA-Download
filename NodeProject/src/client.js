@@ -112,6 +112,127 @@ const _endpoints = {
     },
 };
 
+const STORE_RESPONSE_ATTEMPTS = 3;
+
+function storeEndpointLabel(url) {
+    return url.includes('/r/redownload') ? 'redownload' : 'volumeStoreDownloadProduct';
+}
+
+function responseBodyText(body) {
+    if (body === undefined || body === null) return '';
+    return (Buffer.isBuffer(body) ? body.toString('utf8') : String(body)).trim();
+}
+
+function storePost(prefix, url, bodyObj, headers, authContext, request = curlRequest) {
+    const body = plist.build(bodyObj);
+    let res = null;
+    for (let attempt = 1; attempt <= STORE_RESPONSE_ATTEMPTS; attempt++) {
+        res = request('POST', url, {headers, body, follow: true, timeout: 60, jar: authContext?.cookieJar || null});
+        if (!res || res.status === 0) continue;
+        if (isAuthFailureResponse('', '', res.status)) throw tokenExpiredError();
+        if (!responseBodyText(res.body)) {
+            if (attempt < STORE_RESPONSE_ATTEMPTS) continue;
+            const e = new Error(`${prefix}${t('bad_format_suffix', {
+                message: `${t('empty_resp', {context: t('ctx_resp')})} (HTTP ${res.status}; endpoint: ${storeEndpointLabel(url)}; attempts: ${STORE_RESPONSE_ATTEMPTS})`,
+            })}`);
+            e.code = 'STORE_EMPTY_RESPONSE';
+            e.httpStatus = res.status;
+            e.endpoint = url;
+            throw e;
+        }
+        try {
+            return {...parsePlistLoose(res.body, t('ctx_resp')), _httpStatus: res.status};
+        } catch (error) {
+            const e = new Error(`${prefix}${t('bad_format_suffix', {message: error.message})}`);
+            e.code = 'STORE_FAIL';
+            e.httpStatus = res.status;
+            e.endpoint = url;
+            throw e;
+        }
+    }
+    const e = new Error(`${prefix}${t('net_failed_suffix')}`);
+    e.code = 'STORE_FAIL';
+    throw e;
+}
+
+export function storeAppInfo(appIdentifier, appVerId, authContext, {
+    listVersions = false,
+    request = curlRequest,
+    guid = getDeviceGuid(),
+} = {}) {
+    const endpoint = _endpoints.AppInfo;
+    const dsid = authContext?.authHeaders?.['X-Dsid'];
+    // 与 Asspp 一样，下载信息请求仅带 DSID 头 + 会话 cookie。
+    const headers = {
+        'User-Agent': STORE_USER_AGENT,
+        'Content-Type': 'application/x-apple-plist',
+        'iCloud-DSID': dsid,
+        'X-Dsid': dsid,
+    };
+    let parsedResp;
+    let primaryError = null;
+    try {
+        parsedResp = storePost(
+            t('label_download_app'),
+            endpoint.url(guid, authContext?.pod),
+            endpoint.buildBody({appIdentifier, appVerId, guid}),
+            headers,
+            authContext,
+            request,
+        );
+    } catch (error) {
+        if (error.code !== 'STORE_EMPTY_RESPONSE') throw error;
+        primaryError = error;
+    }
+
+    // Apple 对部分 App 的主端点会返回空正文、5002 或空 songList；这些情况
+    // 统一切换到 downloaddispatch 的 redownload 端点。
+    if (primaryError || String(parsedResp?.failureType || '') === '5002' || !parsedResp?.songList?.[0]) {
+        const redownload = _endpoints.Redownload;
+        parsedResp = storePost(
+            t('label_download_app'),
+            redownload.url(guid),
+            endpoint.buildBody({appIdentifier, appVerId, guid, redownload: true}),
+            headers,
+            authContext,
+            request,
+        );
+    }
+
+    const failureCode = appInfoFailureCode(parsedResp.failureType, parsedResp.customerMessage);
+    if (failureCode === 'APPINFO_BUSY') {
+        const e = new Error(t('appinfo_busy'));
+        e.code = failureCode;
+        throw e;
+    }
+    if (isAuthFailureResponse(parsedResp.failureType, parsedResp.customerMessage)) {
+        throw tokenExpiredError();
+    }
+    if (isLicenseRequiredResponse(parsedResp.failureType, parsedResp.customerMessage)) {
+        const e = new Error(t('appinfo_custom', {
+            msg: parsedResp.customerMessage || 'License not found',
+        }));
+        e.code = 'LICENSE_REQUIRED';
+        e.failureType = String(parsedResp.failureType || '');
+        e.customerMessage = String(parsedResp.customerMessage || '');
+        throw e;
+    }
+    if (parsedResp.customerMessage) {
+        const e = new Error(t('appinfo_custom', {msg: parsedResp.customerMessage}));
+        e.code = failureCode;
+        throw e;
+    }
+    if (!parsedResp.songList?.[0]) {
+        const e = new Error(t('appinfo_nodata'));
+        // Apple sometimes reports an unowned free App as status=0 with an
+        // empty songList instead of failureType=9610. Only the version-list
+        // path may interpret that response as a missing license candidate.
+        e.code = listVersions ? 'APPINFO_EMPTY' : 'APPINFO_FAIL';
+        throw e;
+    }
+    return parsedResp;
+}
+
 class Store {
     static get guid() {
         return getDeviceGuid();
@@ -143,92 +264,11 @@ class Store {
         }
     }
 
-    // 调用 StoreServices 私有接口（volumeStoreDownloadProduct / buyProduct），经系统代理走 curl，
-    // 并复用 authenticate 阶段种下的会话 cookie（volumeStoreDownloadProduct 依赖该会话）。
-    static #storePost(prefix, url, bodyObj, headers, authContext) {
-        const body = plist.build(bodyObj);
-        let res = null;
-        for (let attempt = 1; attempt <= 3; attempt++) {
-            res = curlRequest('POST', url, {headers, body, follow: true, timeout: 60, jar: authContext?.cookieJar || null});
-            if (res.status !== 0) break;
-        }
-        if (!res || res.status === 0) {
-            const e = new Error(`${prefix}${t('net_failed_suffix')}`);
-            e.code = 'STORE_FAIL';
-            throw e;
-        }
-        if (isAuthFailureResponse('', '', res.status)) throw tokenExpiredError();
-        try {
-            return {...parsePlistLoose(res.body, t('ctx_resp')), _httpStatus: res.status};
-        } catch (error) {
-            const e = new Error(`${prefix}${t('bad_format_suffix', {message: error.message})}`);
-            e.code = 'STORE_FAIL';
-            throw e;
-        }
-    }
-
-    static async AppInfo(appIdentifier, appVerId, authContext, {listVersions = false} = {}) {
-        const endpoint = _endpoints.AppInfo;
-        const dsid = authContext?.authHeaders?.['X-Dsid'];
-        // 与 ipatool 一致：下载信息请求仅带 DSID 头 + 会话 cookie（不带 X-Token / storefront）。
-        const headers = {
-            'User-Agent': STORE_USER_AGENT,
-            'Content-Type': 'application/x-apple-plist',
-            'iCloud-DSID': dsid,
-            'X-Dsid': dsid,
-        };
-        let parsedResp = this.#storePost(
-            t('label_download_app'),
-            endpoint.url(this.guid, authContext?.pod),
-            endpoint.buildBody({appIdentifier, appVerId, guid: this.guid}),
-            headers,
-            authContext
-        );
-        // Asspp/ApplePackage 的兼容路径：Apple 会对部分第三方 App 在主端点
-        // 返回 5002，近期也会返回 status=0 + 空 songList。两种情况都改走
-        // downloaddispatch 的 redownload 端点；Gemini 等 App 的历史数据在这里可用。
-        if (String(parsedResp.failureType || '') === '5002' || !parsedResp.songList?.[0]) {
-            const redownload = _endpoints.Redownload;
-            parsedResp = this.#storePost(
-                t('label_download_app'),
-                redownload.url(this.guid),
-                endpoint.buildBody({appIdentifier, appVerId, guid: this.guid, redownload: true}),
-                headers,
-                authContext
-            );
-        }
-        const failureCode = appInfoFailureCode(parsedResp.failureType, parsedResp.customerMessage);
-        if (failureCode === 'APPINFO_BUSY') {
-            const e = new Error(t('appinfo_busy'));
-            e.code = failureCode;
-            throw e;
-        }
-        if (isAuthFailureResponse(parsedResp.failureType, parsedResp.customerMessage)) {
-            throw tokenExpiredError();
-        }
-        if (isLicenseRequiredResponse(parsedResp.failureType, parsedResp.customerMessage)) {
-            const e = new Error(t('appinfo_custom', {
-                msg: parsedResp.customerMessage || 'License not found',
-            }));
-            e.code = 'LICENSE_REQUIRED';
-            e.failureType = String(parsedResp.failureType || '');
-            e.customerMessage = String(parsedResp.customerMessage || '');
-            throw e;
-        }
-        if (parsedResp.customerMessage) {
-            const e = new Error(t('appinfo_custom', {msg: parsedResp.customerMessage}));
-            e.code = failureCode;
-            throw e;
-        }
-        if (!parsedResp.songList?.[0]) {
-            const e = new Error(t('appinfo_nodata'));
-            // Apple sometimes reports an unowned free App as status=0 with an
-            // empty songList instead of failureType=9610. Only the version-list
-            // path may interpret that response as a missing license candidate.
-            e.code = listVersions ? 'APPINFO_EMPTY' : 'APPINFO_FAIL';
-            throw e;
-        }
-        return parsedResp;
+    static async AppInfo(appIdentifier, appVerId, authContext, options = {}) {
+        return storeAppInfo(appIdentifier, appVerId, authContext, {
+            ...options,
+            guid: options.guid ?? this.guid,
+        });
     }
 
     static async purchase(appid, appVerId, authContext) {
@@ -241,7 +281,7 @@ class Store {
             ...(authContext?.authHeaders || {}),
         };
         for (const pricingParameters of ['STDQ', 'GAME']) {
-            const parsedResp = this.#storePost(t('label_purchase'), url, endpoint.buildBody({appid, appVerId, guid: this.guid, pricingParameters}), headers, authContext);
+            const parsedResp = storePost(t('label_purchase'), url, endpoint.buildBody({appid, appVerId, guid: this.guid, pricingParameters}), headers, authContext);
             const successKind = purchaseSuccessKind(parsedResp);
             if (successKind) {
                 const message = successKind === 'existing' ? t('lic_in_library') : t('lic_new');
