@@ -28,6 +28,7 @@ private extension Notification.Name {
     static let pastelRefreshActivePanel = Notification.Name("PastelRefreshActivePanel")
 }
 
+@MainActor
 private enum ApplicationKeyboardShortcutInterceptor {
     private static var didInstall = false
 
@@ -44,6 +45,7 @@ private enum ApplicationKeyboardShortcutInterceptor {
     }
 }
 
+@MainActor
 private final class KeyboardCommandRouter: NSObject, NSMenuItemValidation {
     static let shared = KeyboardCommandRouter()
 
@@ -213,16 +215,25 @@ enum CredentialVaultError: LocalizedError {
 }
 
 private enum DeviceGUIDStore {
-    private static let service = IDAPastelIdentity.deviceGUIDService
+    private static let service = "com.allenmiao.ipahistorydownload.device-guid"
     private static let account = "DeviceIdentifier"
     private static let hexCharacterSet = CharacterSet(charactersIn: "0123456789abcdefABCDEF")
+    private static let invalidIdentifiers: Set<String> = [
+        "000000000000",
+        "020000000000",
+        "FFFFFFFFFFFF"
+    ]
 
-    static func current() -> String {
-        if let saved = load(), !saved.isEmpty {
+    static func current() throws -> String {
+        if let saved = load() {
             return saved
         }
-        let value = systemIdentifier() ?? randomIdentifier()
-        try? save(value)
+
+        guard let value = systemIdentifier() else {
+            throw DeviceGUIDError.unavailable
+        }
+
+        try save(value)
         return value
     }
 
@@ -239,15 +250,24 @@ private enum DeviceGUIDStore {
         else {
             return nil
         }
-        return normalized(value)
+        guard let normalized = normalized(value) else {
+            // Pastel 20260906 could persist macOS's privacy placeholder
+            // 02:00:00:00:00:00. Remove it so the corrected system lookup can
+            // replace the Keychain item on this launch.
+            SecItemDelete(baseQuery as CFDictionary)
+            return nil
+        }
+        return normalized
     }
 
     private static func save(_ value: String) throws {
-        guard let normalized = normalized(value) else { return }
+        guard let normalized = normalized(value) else {
+            throw DeviceGUIDError.unavailable
+        }
         let data = Data(normalized.utf8)
         let update: [String: Any] = [
             kSecValueData as String: data,
-            kSecAttrDescription as String: "IDAPastel StoreServices Device GUID"
+            kSecAttrDescription as String: "Pastel StoreServices Device GUID"
         ]
 
         let updateStatus = SecItemUpdate(baseQuery as CFDictionary, update as CFDictionary)
@@ -258,7 +278,7 @@ private enum DeviceGUIDStore {
 
         var addQuery = baseQuery
         addQuery[kSecValueData as String] = data
-        addQuery[kSecAttrDescription as String] = "IDAPastel StoreServices Device GUID"
+        addQuery[kSecAttrDescription as String] = "Pastel StoreServices Device GUID"
         addQuery[kSecAttrAccessible as String] = kSecAttrAccessibleWhenUnlockedThisDeviceOnly
         let addStatus = SecItemAdd(addQuery as CFDictionary, nil)
         guard addStatus == errSecSuccess else {
@@ -277,14 +297,19 @@ private enum DeviceGUIDStore {
     private static func normalized(_ value: String) -> String? {
         let scalars = value.unicodeScalars.filter { hexCharacterSet.contains($0) }
         let clean = String(String.UnicodeScalarView(scalars)).uppercased()
-        guard clean.count >= 12 else { return nil }
-        return String(clean.prefix(12))
+        guard clean.count == 12,
+              !invalidIdentifiers.contains(clean),
+              let firstByte = UInt8(clean.prefix(2), radix: 16),
+              firstByte & 1 == 0
+        else {
+            return nil
+        }
+        return clean
     }
 
     private static func systemIdentifier() -> String? {
         for interface in ["en0", "en1"] {
-            guard let text = ifconfig(interface),
-                  let value = firstMatch(in: text, pattern: #"ether\s+([0-9a-fA-F:]{17})"#),
+            guard let value = interfaceIdentifier(interface),
                   let guid = normalized(value)
             else {
                 continue
@@ -294,43 +319,58 @@ private enum DeviceGUIDStore {
         return nil
     }
 
-    private static func ifconfig(_ interface: String) -> String? {
-        let task = Process()
-        task.executableURL = URL(fileURLWithPath: "/sbin/ifconfig")
-        task.arguments = [interface]
-        let output = Pipe()
-        task.standardOutput = output
-        task.standardError = Pipe()
-        do {
-            try task.run()
-            task.waitUntilExit()
-            guard task.terminationStatus == 0 else { return nil }
-            let data = output.fileHandleForReading.readDataToEndOfFile()
-            return String(data: data, encoding: .utf8)
-        } catch {
-            return nil
-        }
-    }
+    // Mirrors Asspp/ApplePackage's macOS implementation: query AF_ROUTE with
+    // NET_RT_IFLIST instead of spawning ifconfig from the app process. Terminal
+    // and GUI apps can receive different privacy-filtered command output.
+    private static func interfaceIdentifier(_ interface: String) -> String? {
+        let interfaceIndex = if_nametoindex(interface)
+        guard interfaceIndex != 0 else { return nil }
 
-    private static func firstMatch(in text: String, pattern: String) -> String? {
-        guard let regex = try? NSRegularExpression(pattern: pattern) else { return nil }
-        let range = NSRange(text.startIndex..<text.endIndex, in: text)
-        guard let match = regex.firstMatch(in: text, range: range),
-              match.numberOfRanges > 1,
-              let valueRange = Range(match.range(at: 1), in: text)
+        var managementInfoBase = [
+            CTL_NET,
+            AF_ROUTE,
+            0,
+            AF_LINK,
+            NET_RT_IFLIST,
+            Int32(interfaceIndex)
+        ]
+        var length: size_t = 0
+
+        guard sysctl(&managementInfoBase, 6, nil, &length, nil, 0) == 0,
+              length > 0
         else {
             return nil
         }
-        return String(text[valueRange])
+
+        var buffer = [CChar](repeating: 0, count: length)
+        guard sysctl(&managementInfoBase, 6, &buffer, &length, nil, 0) == 0 else {
+            return nil
+        }
+
+        let infoData = Data(bytes: buffer, count: length)
+        let interfaceData = Data(interface.utf8)
+        let searchStart = MemoryLayout<if_msghdr>.stride + 1
+        guard searchStart < infoData.endIndex,
+              let interfaceRange = infoData[searchStart...].range(of: interfaceData)
+        else {
+            return nil
+        }
+
+        let addressStart = interfaceRange.upperBound
+        let addressEnd = addressStart + 6
+        guard addressEnd <= infoData.endIndex else { return nil }
+
+        return infoData[addressStart..<addressEnd]
+            .map { String(format: "%02X", $0) }
+            .joined()
     }
 
-    private static func randomIdentifier() -> String {
-        var bytes = [UInt8](repeating: 0, count: 6)
-        let status = SecRandomCopyBytes(kSecRandomDefault, bytes.count, &bytes)
-        if status != errSecSuccess {
-            return UUID().uuidString.replacingOccurrences(of: "-", with: "").prefix(12).uppercased()
+    private enum DeviceGUIDError: LocalizedError {
+        case unavailable
+
+        var errorDescription: String? {
+            String(localized: "无法获取可靠的设备 GUID。为保护 Apple 账户，Pastel 已阻止登录。请确认正在使用真实 Mac，并在更新系统后重试。")
         }
-        return bytes.map { String(format: "%02X", $0) }.joined()
     }
 }
 
@@ -1269,6 +1309,10 @@ final class AccountStore: ObservableObject {
         do { runtime = try NodeRuntime.locate() }
         catch { isValidating = false; validationMessage = error.localizedDescription; return }
 
+        let deviceGUID: String
+        do { deviceGUID = try DeviceGUIDStore.current() }
+        catch { isValidating = false; validationMessage = error.localizedDescription; return }
+
         isValidating = true
         needsCode = false
         validationLog = ""
@@ -1283,7 +1327,7 @@ final class AccountStore: ObservableObject {
         env["APPLE_CODE"] = code
         env["IPA_VALIDATE_LOGIN"] = "1"
         env["IPA_FORCE_LOGIN"] = "1"
-        env["IPA_DEVICE_GUID"] = DeviceGUIDStore.current()
+        env["IPA_DEVICE_GUID"] = deviceGUID
         if let sessionURL = Self.sessionDirectoryURL() { env["IPA_SESSION_DIR"] = sessionURL.path }
         task.environment = env
 
@@ -1442,6 +1486,15 @@ final class DownloadManager: ObservableObject {
             return true
         }
 
+        let deviceGUID: String
+        do { deviceGUID = try DeviceGUIDStore.current() }
+        catch {
+            let job = Job(id: id, label: label, platform: config.platform, status: .failed, log: error.localizedDescription + "\n", progress: nil)
+            jobs[id] = job
+            publishDownloadFailure(for: job, config: config)
+            return true
+        }
+
         jobs[id] = Job(id: id, label: label, platform: config.platform, log: String(localized: "任务已开始。") + "\n")
 
         let task = Process()
@@ -1459,7 +1512,7 @@ final class DownloadManager: ObservableObject {
         if config.listVersionIDs { env["IPA_LIST_VERSION_IDS"] = "1" }
         if config.validateLogin { env["IPA_VALIDATE_LOGIN"] = "1" }
         if config.allowAppAcquisition { env["IPA_ALLOW_APP_ACQUIRE"] = "1" }
-        env["IPA_DEVICE_GUID"] = DeviceGUIDStore.current()
+        env["IPA_DEVICE_GUID"] = deviceGUID
         if !config.appIsFree.isEmpty { env["IPA_APP_IS_FREE"] = config.appIsFree }
         env["IPA_APP_COUNTRY"] = config.appCountry
         if config.removeAppStoreUpdateMetadata { env["IPA_REMOVE_APP_STORE_UPDATE_METADATA"] = "1" }
@@ -5552,7 +5605,7 @@ struct ContentView: View {
         let locallyAvailableURLs: [URL]
     }
 
-    private static func scanDownloadLibrary(at dirURL: URL) -> DownloadLibrarySnapshot? {
+    nonisolated private static func scanDownloadLibrary(at dirURL: URL) -> DownloadLibrarySnapshot? {
         guard let urls = try? FileManager.default.contentsOfDirectory(
             at: dirURL,
             includingPropertiesForKeys: nil,
@@ -7589,7 +7642,7 @@ private struct SidebarActionButtonStyleModifier: ViewModifier {
     }
 }
 
-private struct StablePressButtonStyle: ButtonStyle {
+struct StablePressButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
     }
@@ -7629,7 +7682,7 @@ private struct SettingsNavigationContext {
 }
 
 private struct SettingsNavigationContextKey: EnvironmentKey {
-    static let defaultValue = SettingsNavigationContext()
+    nonisolated(unsafe) static let defaultValue = SettingsNavigationContext()
 }
 
 private extension EnvironmentValues {
@@ -7948,7 +8001,7 @@ struct AccountSettingsView: View {
     @EnvironmentObject private var accountStore: AccountStore
     @State private var editor: AccountEditorContext?
     @State private var accountPendingDeletion: StoredAccount?
-    @State private var deviceGUID = DeviceGUIDStore.current()
+    @State private var deviceGUID: String? = try? DeviceGUIDStore.current()
 
     var body: some View {
         SettingsContentPane(tab: .account) {
@@ -8015,7 +8068,7 @@ struct AccountSettingsView: View {
             }
         }
         .onAppear {
-            deviceGUID = DeviceGUIDStore.current()
+            deviceGUID = try? DeviceGUIDStore.current()
             presentRequestedRelogin()
         }
         .onChange(of: accountStore.reloginRequestID) { _, _ in presentRequestedRelogin() }
@@ -8052,7 +8105,7 @@ struct AccountSettingsView: View {
 }
 
 private struct SettingsDeviceGUIDRow: View {
-    let deviceGUID: String
+    let deviceGUID: String?
     @State private var copied = false
 
     var body: some View {
@@ -8060,20 +8113,23 @@ private struct SettingsDeviceGUIDRow: View {
             VStack(alignment: .leading, spacing: 3) {
                 Text(String(localized: "设备 GUID"))
                     .font(.callout.weight(.semibold))
-                Text(String(localized: "用于 Apple Store Services 登录和下载请求。"))
+                Text(deviceGUID == nil
+                     ? String(localized: "无法获取可靠的设备 GUID。为保护 Apple 账户，Pastel 已阻止登录。请确认正在使用真实 Mac，并在更新系统后重试。")
+                     : String(localized: "用于 Apple Store Services 登录和下载请求。"))
                     .font(.footnote)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(deviceGUID == nil ? Color.red : Color.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
 
             Spacer(minLength: 16)
 
-            Text(deviceGUID)
+            Text(deviceGUID ?? String(localized: "不可用"))
                 .font(.system(.callout, design: .monospaced).weight(.medium))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(deviceGUID == nil ? Color.red : Color.secondary)
                 .textSelection(.enabled)
 
             Button {
+                guard let deviceGUID else { return }
                 NSPasteboard.general.clearContents()
                 NSPasteboard.general.setString(deviceGUID, forType: .string)
                 copied = true
@@ -8086,6 +8142,7 @@ private struct SettingsDeviceGUIDRow: View {
                     .frame(width: 18, height: 18)
             }
             .buttonStyle(.borderless)
+            .disabled(deviceGUID == nil)
         }
         .padding(.horizontal, 18)
         .padding(.vertical, 10)
@@ -8637,6 +8694,7 @@ private struct FocusReleaseClickMonitor: NSViewRepresentable {
         coordinator.uninstall()
     }
 
+    @MainActor
     final class Coordinator {
         var isEditing: Binding<Bool>
         private var monitor: Any?
@@ -8684,6 +8742,7 @@ private struct FocusReleaseClickMonitor: NSViewRepresentable {
     }
 }
 
+@MainActor
 private final class KeyboardShortcutState {
     static let shared = KeyboardShortcutState()
     var isTextEditing = false
