@@ -476,6 +476,73 @@ private enum KeychainPasswordStore {
     }
 }
 
+private enum NodeSessionKeyStore {
+    private static let service = "com.idapastel.app.node-session-key"
+    private static let account = "NodeSessionKey"
+    private static let keyLength = 32
+
+    static func loadOrCreateBase64() throws -> String {
+        if let existing = try load(), existing.count == keyLength {
+            return existing.base64EncodedString()
+        }
+
+        var bytes = [UInt8](repeating: 0, count: keyLength)
+        guard SecRandomCopyBytes(kSecRandomDefault, bytes.count, &bytes) == errSecSuccess else {
+            throw CredentialVaultError.keychainOperationFailed("生成 Node 会话密钥", errSecInternalError)
+        }
+        let generated = Data(bytes)
+        try save(generated)
+        return generated.base64EncodedString()
+    }
+
+    private static func load() throws -> Data? {
+        var query = baseQuery
+        query[kSecReturnData as String] = true
+        query[kSecMatchLimit as String] = kSecMatchLimitOne
+
+        var result: CFTypeRef?
+        let status = SecItemCopyMatching(query as CFDictionary, &result)
+        if status == errSecItemNotFound { return nil }
+        guard status == errSecSuccess else {
+            throw CredentialVaultError.keychainOperationFailed("读取 Node 会话密钥", status)
+        }
+        return result as? Data
+    }
+
+    private static func save(_ data: Data) throws {
+        let update: [String: Any] = [
+            kSecValueData as String: data,
+            kSecAttrDescription as String: "IDAPastel Node session encryption key"
+        ]
+        let updateStatus = SecItemUpdate(baseQuery as CFDictionary, update as CFDictionary)
+        if updateStatus == errSecSuccess { return }
+        guard updateStatus == errSecItemNotFound else {
+            throw CredentialVaultError.keychainOperationFailed("更新 Node 会话密钥", updateStatus)
+        }
+
+        var addQuery = baseQuery
+        addQuery[kSecValueData as String] = data
+        addQuery[kSecAttrDescription as String] = "IDAPastel Node session encryption key"
+        addQuery[kSecAttrAccessible as String] = kSecAttrAccessibleWhenUnlockedThisDeviceOnly
+        let addStatus = SecItemAdd(addQuery as CFDictionary, nil)
+        if addStatus == errSecDuplicateItem,
+           let existing = try load(), existing.count == keyLength {
+            return
+        }
+        guard addStatus == errSecSuccess else {
+            throw CredentialVaultError.keychainOperationFailed("写入 Node 会话密钥", addStatus)
+        }
+    }
+
+    private static var baseQuery: [String: Any] {
+        [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: account
+        ]
+    }
+}
+
 enum CredentialVault {
     static func save(_ credentials: StoredCredentials) throws {
         try prepareDirectory()
@@ -1317,21 +1384,35 @@ final class AccountStore: ObservableObject {
         needsCode = false
         validationLog = ""
 
+        let credentialsData: Data
+        do {
+            let sessionKey = try NodeSessionKeyStore.loadOrCreateBase64()
+            credentialsData = try nodeCredentialPayload(
+                appleAccount: pending.email,
+                password: pending.password,
+                code: code,
+                sessionKey: sessionKey
+            )
+        } catch {
+            isValidating = false
+            validationMessage = error.localizedDescription
+            return
+        }
+
         let task = Process()
         task.executableURL = runtime.nodeURL
         task.arguments = ["main.js"]
         task.currentDirectoryURL = runtime.projectURL
         var env = NodeRuntime.baseEnvironment()
-        env["APPLE_ID"] = pending.email
-        env["APPLE_PWD"] = pending.password
-        env["APPLE_CODE"] = code
         env["IPA_VALIDATE_LOGIN"] = "1"
         env["IPA_FORCE_LOGIN"] = "1"
         env["IPA_DEVICE_GUID"] = deviceGUID
         if let sessionURL = Self.sessionDirectoryURL() { env["IPA_SESSION_DIR"] = sessionURL.path }
         task.environment = env
 
+        let input = Pipe()
         let out = Pipe(); let err = Pipe()
+        task.standardInput = input
         task.standardOutput = out; task.standardError = err
         pipes = (out, err)
         let handler: @Sendable (FileHandle) -> Void = { [weak self] h in
@@ -1349,8 +1430,15 @@ final class AccountStore: ObservableObject {
                 self?.finishValidation(exitCode: exit)
             }
         }
-        do { try task.run(); process = task }
-        catch { cleanup(); isValidating = false; validationMessage = error.localizedDescription }
+        do {
+            try task.run()
+            process = task
+            input.fileHandleForWriting.write(credentialsData)
+            try input.fileHandleForWriting.close()
+        } catch {
+            if task.isRunning { task.terminate() }
+            cleanup(); isValidating = false; validationMessage = error.localizedDescription
+        }
     }
 
     private func finishValidation(exitCode: Int32) {
@@ -1495,6 +1583,22 @@ final class DownloadManager: ObservableObject {
             return true
         }
 
+        let credentialsData: Data
+        do {
+            let sessionKey = try NodeSessionKeyStore.loadOrCreateBase64()
+            credentialsData = try nodeCredentialPayload(
+                appleAccount: config.appleAccount,
+                password: config.password,
+                code: config.code,
+                sessionKey: sessionKey
+            )
+        } catch {
+            let job = Job(id: id, label: label, platform: config.platform, status: .failed, log: error.localizedDescription + "\n", progress: nil)
+            jobs[id] = job
+            publishDownloadFailure(for: job, config: config)
+            return true
+        }
+
         jobs[id] = Job(id: id, label: label, platform: config.platform, log: String(localized: "任务已开始。") + "\n")
 
         let task = Process()
@@ -1502,9 +1606,6 @@ final class DownloadManager: ObservableObject {
         task.arguments = ["main.js"]
         task.currentDirectoryURL = runtime.projectURL
         var env = NodeRuntime.baseEnvironment()
-        env["APPLE_ID"] = config.appleAccount
-        env["APPLE_PWD"] = config.password
-        env["APPLE_CODE"] = config.code
         env["DOWNLOAD_APPID"] = config.appID
         env["DOWNLOAD_VERSION_ID"] = config.versionID
         env["DOWNLOAD_DIR"] = config.downloadDir
@@ -1519,7 +1620,9 @@ final class DownloadManager: ObservableObject {
         if let sessionURL = Self.sessionDirectoryURL() { env["IPA_SESSION_DIR"] = sessionURL.path }
         task.environment = env
 
+        let input = Pipe()
         let stdout = Pipe(); let stderr = Pipe()
+        task.standardInput = input
         task.standardOutput = stdout; task.standardError = stderr
         pipes[id] = (stdout, stderr)
         stdout.fileHandleForReading.readabilityHandler = { [weak self] h in
@@ -1542,8 +1645,14 @@ final class DownloadManager: ObservableObject {
             }
         }
 
-        do { try task.run(); processes[id] = task }
+        do {
+            try task.run()
+            processes[id] = task
+            input.fileHandleForWriting.write(credentialsData)
+            try input.fileHandleForWriting.close()
+        }
         catch {
+            if task.isRunning { task.terminate() }
             cleanup(id: id)
             var j = jobs[id] ?? Job(id: id, label: label, platform: config.platform)
             j.status = .failed; j.progress = nil
@@ -1656,6 +1765,20 @@ final class DownloadManager: ObservableObject {
             return sessionURL
         } catch { return nil }
     }
+}
+
+private func nodeCredentialPayload(
+    appleAccount: String,
+    password: String,
+    code: String,
+    sessionKey: String
+) throws -> Data {
+    try JSONSerialization.data(withJSONObject: [
+        "appleAccount": appleAccount,
+        "password": password,
+        "code": code,
+        "sessionKey": sessionKey
+    ])
 }
 
 struct AppSearchResult: Decodable, Identifiable, Hashable {
