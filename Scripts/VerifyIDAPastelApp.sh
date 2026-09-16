@@ -17,12 +17,16 @@ reject_direct_symlink() {
 
 require_adhoc_signature() {
     local executable_path="$1"
+    local runtime_allowed="${2:-false}"
     local signing_details
 
     signing_details=$(codesign -dvvv "$executable_path" 2>&1)
     printf '%s\n' "$signing_details" | grep -qx 'Signature=adhoc'
     printf '%s\n' "$signing_details" | grep -qx 'TeamIdentifier=not set'
-    printf '%s\n' "$signing_details" | grep -Eq '^CodeDirectory .*flags=.*\(adhoc\)'
+    # Xcode 26 may add linker-signed alongside adhoc for locally signed
+    # products. Accept that flag combination while still rejecting runtime
+    # signing below.
+    printf '%s\n' "$signing_details" | grep -Eq '^CodeDirectory .*flags=.*\(.*adhoc'
 
     if printf '%s\n' "$signing_details" | grep -q '^Authority='; then
         echo "Developer certificate authority must be absent: $executable_path" >&2
@@ -30,7 +34,25 @@ require_adhoc_signature() {
     fi
 
     if printf '%s\n' "$signing_details" | grep -Eq '^CodeDirectory .*flags=.*runtime'; then
+        if [[ "$runtime_allowed" == 'true' ]]; then
+            local entitlements
+            entitlements=$(codesign -d --entitlements :- "$executable_path" 2>/dev/null)
+            if ! printf '%s\n' "$entitlements" | grep -q '<key>com.apple.security.cs.allow-jit</key>'; then
+                echo "JIT entitlement must be present: $executable_path" >&2
+                exit 1
+            fi
+            if ! printf '%s\n' "$entitlements" | grep -A1 '<key>com.apple.security.cs.allow-jit</key>' | tail -n 1 | grep -q '<true/>'; then
+                echo "JIT entitlement must be enabled: $executable_path" >&2
+                exit 1
+            fi
+            return
+        fi
         echo "Hardened runtime must be absent: $executable_path" >&2
+        exit 1
+    fi
+
+    if [[ "$runtime_allowed" == 'true' ]]; then
+        echo "Hardened runtime must be present: $executable_path" >&2
         exit 1
     fi
 }
@@ -79,7 +101,7 @@ require_arm64_macho "$sap_signer"
 codesign --verify --deep --strict --verbose=2 "$app_path"
 require_adhoc_signature "$app_path"
 require_adhoc_signature "$main_executable"
-require_adhoc_signature "$node_executable"
+require_adhoc_signature "$node_executable" true
 require_adhoc_signature "$sap_signer"
 
 if /usr/libexec/PlistBuddy -c 'Print :SUFeedURL' "$info_plist" >/dev/null 2>&1; then

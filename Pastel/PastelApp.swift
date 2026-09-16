@@ -215,7 +215,7 @@ enum CredentialVaultError: LocalizedError {
 }
 
 private enum DeviceGUIDStore {
-    private static let service = "com.allenmiao.ipahistorydownload.device-guid"
+    private static let service = IDAPastelIdentity.deviceGUIDService
     private static let account = "DeviceIdentifier"
     private static let hexCharacterSet = CharacterSet(charactersIn: "0123456789abcdefABCDEF")
     private static let invalidIdentifiers: Set<String> = [
@@ -267,7 +267,7 @@ private enum DeviceGUIDStore {
         let data = Data(normalized.utf8)
         let update: [String: Any] = [
             kSecValueData as String: data,
-            kSecAttrDescription as String: "Pastel StoreServices Device GUID"
+            kSecAttrDescription as String: "IDAPastel StoreServices Device GUID"
         ]
 
         let updateStatus = SecItemUpdate(baseQuery as CFDictionary, update as CFDictionary)
@@ -278,7 +278,7 @@ private enum DeviceGUIDStore {
 
         var addQuery = baseQuery
         addQuery[kSecValueData as String] = data
-        addQuery[kSecAttrDescription as String] = "Pastel StoreServices Device GUID"
+        addQuery[kSecAttrDescription as String] = "IDAPastel StoreServices Device GUID"
         addQuery[kSecAttrAccessible as String] = kSecAttrAccessibleWhenUnlockedThisDeviceOnly
         let addStatus = SecItemAdd(addQuery as CFDictionary, nil)
         guard addStatus == errSecSuccess else {
