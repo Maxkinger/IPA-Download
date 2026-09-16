@@ -5301,7 +5301,7 @@ struct ContentView: View {
 
     private static let versionIDsFetchJobKey = "__ipa_versionids_fetch__"
 
-    private static func filenameVersionAndVariant(from stem: String) -> (name: String, version: String, variant: IPADownloadVariant) {
+    nonisolated private static func filenameVersionAndVariant(from stem: String) -> (name: String, version: String, variant: IPADownloadVariant) {
         let suffix = "_no-update"
         let variant: IPADownloadVariant
         let baseStem: String
@@ -5643,7 +5643,7 @@ struct ContentView: View {
         )
     }
 
-    private static func extractDownloadedItem(fromIPA url: URL) -> DownloadedItem? {
+    nonisolated private static func extractDownloadedItem(fromIPA url: URL) -> DownloadedItem? {
         let path = url.path
         let attrs = try? FileManager.default.attributesOfItem(atPath: path)
         let size = (attrs?[.size] as? NSNumber)?.int64Value ?? 0
@@ -5769,7 +5769,7 @@ struct ContentView: View {
         }
     }
 
-    private static func extractVersionMetadata(fromIPA path: String) -> (versionID: String?, variant: IPADownloadVariant) {
+    nonisolated private static func extractVersionMetadata(fromIPA path: String) -> (versionID: String?, variant: IPADownloadVariant) {
         let metadataInfo = downloadedMetadata(fromIPA: path)
         guard let data = metadataInfo.data,
               let plist = try? PropertyListSerialization.propertyList(from: data, options: [], format: nil) as? [String: Any]
@@ -5809,7 +5809,7 @@ struct ContentView: View {
             .fileURL
     }
 
-    private static func runUnzip(_ args: [String]) -> Data? {
+    nonisolated private static func runUnzip(_ args: [String]) -> Data? {
         let proc = Process()
         proc.executableURL = URL(fileURLWithPath: "/usr/bin/unzip")
         proc.arguments = args
@@ -5822,13 +5822,13 @@ struct ContentView: View {
         return data.isEmpty ? nil : data
     }
 
-    private static func isFileMaterialized(at path: String) -> Bool {
+    nonisolated private static func isFileMaterialized(at path: String) -> Bool {
         var fileInfo = stat()
         guard lstat(path, &fileInfo) == 0 else { return false }
         return (fileInfo.st_flags & UInt32(SF_DATALESS)) == 0
     }
 
-    private static func downloadedMetadata(fromIPA path: String) -> (data: Data?, removesAppStoreUpdates: Bool) {
+    nonisolated private static func downloadedMetadata(fromIPA path: String) -> (data: Data?, removesAppStoreUpdates: Bool) {
         guard isFileMaterialized(at: path) else { return (nil, false) }
         if let data = runUnzip(["-p", path, "iTunesMetadata.plist"]) {
             return (data, false)
@@ -5839,7 +5839,7 @@ struct ContentView: View {
         return (nil, false)
     }
 
-    private static func mainAppInfoPlistData(fromIPA path: String) -> Data? {
+    nonisolated private static func mainAppInfoPlistData(fromIPA path: String) -> Data? {
         guard isFileMaterialized(at: path),
               let listData = runUnzip(["-Z1", path]),
               let list = String(data: listData, encoding: .utf8)
@@ -5858,7 +5858,7 @@ struct ContentView: View {
         return runUnzip(["-p", path, infoPath])
     }
 
-    private static func extractAppIcon(fromIPA path: String) -> NSImage? {
+    nonisolated private static func extractAppIcon(fromIPA path: String) -> NSImage? {
         guard let listData = runUnzip(["-Z1", path]),
               let list = String(data: listData, encoding: .utf8) else { return nil }
         let entries = list.split(separator: "\n").map(String.init)
