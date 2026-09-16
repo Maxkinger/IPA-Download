@@ -5301,25 +5301,34 @@ struct ContentView: View {
 
     private static let versionIDsFetchJobKey = "__ipa_versionids_fetch__"
 
-    nonisolated private static func filenameVersionAndVariant(from stem: String) -> (name: String, version: String, variant: IPADownloadVariant) {
+    nonisolated private static func filenameVersionAndVariant(from stem: String) -> (name: String, version: String, variant: IPADownloadVariant, platform: String) {
+        let platformSuffixes = ["iphone", "ipad", "appletv", "vision"]
+        var platform = ""
+        var platformStem = stem
+        for suffix in platformSuffixes where platformStem.lowercased().hasSuffix("_\(suffix)") {
+            platform = suffix
+            platformStem = String(platformStem.dropLast(suffix.count + 1))
+            break
+        }
+
         let suffix = "_no-update"
         let variant: IPADownloadVariant
         let baseStem: String
-        if stem.localizedCaseInsensitiveContains(suffix), stem.lowercased().hasSuffix(suffix) {
+        if platformStem.localizedCaseInsensitiveContains(suffix), platformStem.lowercased().hasSuffix(suffix) {
             variant = .noUpdates
-            baseStem = String(stem.dropLast(suffix.count))
+            baseStem = String(platformStem.dropLast(suffix.count))
         } else {
             variant = .original
-            baseStem = stem
+            baseStem = platformStem
         }
 
         guard let underscore = baseStem.lastIndex(of: "_") else {
-            return (baseStem, "", variant)
+            return (baseStem, "", variant, platform)
         }
 
         let name = String(baseStem[..<underscore])
         let version = String(baseStem[baseStem.index(after: underscore)...])
-        return (name, version, variant)
+        return (name, version, variant, platform)
     }
 
     private func fetchVersionIDsFromApple(allowAppAcquisition: Bool = false) {
@@ -5658,7 +5667,7 @@ struct ContentView: View {
         else {
             let name = filenameInfo.name.isEmpty ? stem : filenameInfo.name
             let packagePlatform = DownloadedPackagePlatform.canonicalPlatform(
-                metadataValue: "",
+                metadataValue: filenameInfo.platform,
                 mainInfoPlistData: mainInfoPlistData
             )
             return DownloadedItem(id: path, fileURL: url, appName: name, developer: "", bundleId: "",
@@ -5679,8 +5688,9 @@ struct ContentView: View {
         let bundleId = str("softwareVersionBundleId")
         let groupKey = !itemId.isEmpty ? itemId : (!bundleId.isEmpty ? bundleId : appName)
         let version = !str("bundleShortVersionString").isEmpty ? str("bundleShortVersionString") : filenameInfo.version
+        let metadataPlatform = str("software-platform")
         let softwarePlatform = DownloadedPackagePlatform.canonicalPlatform(
-            metadataValue: str("software-platform"),
+            metadataValue: metadataPlatform.isEmpty ? filenameInfo.platform : metadataPlatform,
             mainInfoPlistData: mainInfoPlistData
         )
 

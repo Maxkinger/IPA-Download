@@ -22,3 +22,11 @@ test('keeps detached download-library parsing off the main actor', async () => {
         );
     }
 });
+
+test('recognizes platform suffixes in downloaded IPA filenames', async () => {
+    const source = await readFile(new URL('../../Pastel/PastelApp.swift', import.meta.url), 'utf8');
+
+    assert.match(source, /\["iphone",\s*"ipad",\s*"appletv",\s*"vision"\]/);
+    assert.match(source, /platform:\s*String/);
+    assert.match(source, /metadataValue:\s*filenameInfo\.platform/);
+});

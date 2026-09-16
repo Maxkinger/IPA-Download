@@ -19,6 +19,50 @@ test('resolves only an implicit Apple TV version', async () => {
     assert.equal(await app.resolveAppVersionID('42', '', 'iphone'), '');
 });
 
+test('adds the canonical platform suffix to downloaded IPA filenames', async () => {
+    const originalAppInfo = Store.AppInfo;
+    const originalNoUpdate = process.env.IPA_REMOVE_APP_STORE_UPDATE_METADATA;
+    Store.AppInfo = async () => ({
+        songList: [{
+            metadata: {
+                bundleDisplayName: 'Platform Fixture',
+                bundleShortVersionString: '1.2.3',
+            },
+        }],
+    });
+
+    let directory;
+    try {
+        directory = mkdtempSync(join(tmpdir(), 'idapastel-platform-name-'));
+        const expected = {
+            iphone: 'Platform Fixture_1.2.3_iphone.ipa',
+            ipad: 'Platform Fixture_1.2.3_ipad.ipa',
+            appletv: 'Platform Fixture_1.2.3_appletv.ipa',
+            vision: 'Platform Fixture_1.2.3_vision.ipa',
+        };
+
+        for (const [platform, filename] of Object.entries(expected)) {
+            const app = new Ipa(credentials);
+            app.dir = directory;
+            app.platform = platform;
+            await app.info('42', '777');
+            assert.equal(app.out, join(directory, filename));
+        }
+
+        process.env.IPA_REMOVE_APP_STORE_UPDATE_METADATA = '1';
+        const app = new Ipa(credentials);
+        app.dir = directory;
+        app.platform = 'appletv';
+        await app.info('42', '777');
+        assert.equal(app.out, join(directory, 'Platform Fixture_1.2.3_no-update_appletv.ipa'));
+    } finally {
+        if (directory) rmSync(directory, {recursive: true, force: true});
+        Store.AppInfo = originalAppInfo;
+        if (originalNoUpdate === undefined) delete process.env.IPA_REMOVE_APP_STORE_UPDATE_METADATA;
+        else process.env.IPA_REMOVE_APP_STORE_UPDATE_METADATA = originalNoUpdate;
+    }
+});
+
 test('uses the existing StoreServices download license before attempting purchase', async () => {
     const app = new Ipa(credentials);
     const events = [];

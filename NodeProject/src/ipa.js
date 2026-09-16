@@ -36,7 +36,7 @@ import {readCookieJar, restoreCookieJar} from './gsa.js';
 import {SignatureClient} from './Signature.js';
 import {download} from './downloader.js';
 import {t} from './i18n.js';
-import {isAppleTVPlatform} from './platform.js';
+import {isAppleTVPlatform, normalizeAppPlatform} from './platform.js';
 import {lookupLatestTVExternalVersionID} from './tvos-version.js';
 import {validatePackageForPlatform} from './package-platform.js';
 
@@ -212,6 +212,7 @@ export class Ipa {
         this.dir = '.';
         this.out = '';
         this.cache = '';
+        this.platform = 'iphone';
         this.sessionFile = sessionFileFor(APPLE_ID);
         this.usedCachedSession = false;
     }
@@ -319,7 +320,8 @@ export class Ipa {
         const ver = s?.metadata?.bundleShortVersionString || 'UnknownVer';
         console.log(t('app_info', {name, ver}));
         const noUpdateSuffix = process.env.IPA_REMOVE_APP_STORE_UPDATE_METADATA === '1' ? '_no-update' : '';
-        this.out = path.join(this.dir, `${name}_${ver}${noUpdateSuffix}.ipa`);
+        const platformSuffix = normalizeAppPlatform(this.platform);
+        this.out = path.join(this.dir, `${name}_${ver}${noUpdateSuffix}_${platformSuffix}.ipa`);
         return s;
     }
 
@@ -519,6 +521,7 @@ export class Ipa {
     async runDownload({dir = '.', APPID, appVerId, platform = 'iphone'} = {}) {
         if (!this.user) throw new Error('Please login() first');
         this.dir = dir;
+        this.platform = normalizeAppPlatform(platform);
         await fsPromises.mkdir(this.dir, {recursive: true});
         this.cache = await fsPromises.mkdtemp(path.join(os.tmpdir(), 'idapastel-download-parts-'));
         console.log(t('temp_dir', {cache: this.cache}));
