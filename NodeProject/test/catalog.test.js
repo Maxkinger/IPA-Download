@@ -229,33 +229,141 @@ test('refreshes an expired persisted Apple TV ranking', async () => {
     }
 });
 
-test('does not fall back to RSS when Apple TV discover fails or has no shelf', async () => {
+function featuredRSSFallbackClient(requests, country) {
+    return {async get(url, options = {}) {
+        requests.push({url, options});
+        if (url === `https://apps.apple.com/${country}/tv/discover?l=en-GB`) {
+            return {data: '<html><body>Apple TV discover is unavailable</body></html>'};
+        }
+        if (url === `https://itunes.apple.com/${country}/rss/topfreeapplications/limit=100/json`) {
+            return {data: {feed: {entry: [
+                {id: {attributes: {'im:id': '111'}}, 'im:name': {label: 'Free TV App'}},
+            ]}}};
+        }
+        if (url === `https://itunes.apple.com/${country}/rss/toppaidapplications/limit=100/json`) {
+            return {data: {feed: {entry: [
+                {id: {attributes: {'im:id': '222'}}, 'im:name': {label: 'Paid TV App'}},
+            ]}}};
+        }
+        assert.equal(url, 'https://itunes.apple.com/lookup');
+        assert.equal(options.params.entity, 'tvSoftware');
+        return {data: {results: [
+            {trackId: 111, trackName: `${country} Free TV App`, supportedDevices: ['AppleTV4-AppleTV4']},
+            {trackId: 222, trackName: `${country} Paid TV App`, supportedDevices: ['AppleTV4-AppleTV4']},
+        ]}};
+    }};
+}
+
+test('falls back to public RSS rankings when Apple TV discover has no shelf', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'ipa-tvos-ranking-'));
+    const cachePath = join(directory, 'tv-ranking-cache.json');
+    const requests = [];
+
+    try {
+        const result = await featuredApps({
+            country: 'hk', platform: 'appletv', cachePath,
+            client: featuredRSSFallbackClient(requests, 'hk'),
+        });
+        assert.deepEqual(result.results.map(app => app.id), ['111', '222']);
+        assert.deepEqual(requests.map(request => request.url), [
+            'https://apps.apple.com/hk/tv/discover?l=en-GB',
+            'https://itunes.apple.com/hk/rss/topfreeapplications/limit=100/json',
+            'https://itunes.apple.com/hk/rss/toppaidapplications/limit=100/json',
+            'https://itunes.apple.com/lookup',
+        ]);
+    } finally {
+        await rm(directory, {recursive: true, force: true});
+    }
+});
+
+test('falls back to public RSS rankings when Apple TV discover fails', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'ipa-tvos-ranking-'));
+    const cachePath = join(directory, 'tv-ranking-cache.json');
+    const requests = [];
+
+    try {
+        const result = await featuredApps({
+            country: 'us', platform: 'appletv', cachePath,
+            client: {
+                async get(url, options = {}) {
+                    if (url === 'https://apps.apple.com/us/tv/discover?l=en-GB') {
+                        requests.push({url, options});
+                        throw new Error('discover unavailable');
+                    }
+                    return featuredRSSFallbackClient(requests, 'us').get(url, options);
+                },
+            },
+        });
+        assert.deepEqual(result.results.map(app => app.id), ['111', '222']);
+        assert.equal(requests[0].url, 'https://apps.apple.com/us/tv/discover?l=en-GB');
+        assert.equal(requests.at(-1).url, 'https://itunes.apple.com/lookup');
+    } finally {
+        await rm(directory, {recursive: true, force: true});
+    }
+});
+
+test('returns an empty Apple TV ranking when both discover and RSS are unavailable', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'ipa-tvos-ranking-'));
     const cachePath = join(directory, 'tv-ranking-cache.json');
     const emptyRequests = [];
-    const failedRequests = [];
 
     try {
         const empty = await featuredApps({
             country: 'fr', platform: 'appletv', cachePath,
             client: {async get(url) {
                 emptyRequests.push(url);
-                return {data: '<a href="/fr/app/outside/id999"></a>'};
+                if (url === 'https://apps.apple.com/fr/tv/discover?l=en-GB') {
+                    return {data: '<a href="/fr/app/outside/id999"></a>'};
+                }
+                return {data: {feed: {entry: []}}};
             }},
         });
         assert.deepEqual(empty.results, []);
-        assert.deepEqual(emptyRequests, ['https://apps.apple.com/fr/tv/discover?l=en-GB']);
+        assert.deepEqual(emptyRequests, [
+            'https://apps.apple.com/fr/tv/discover?l=en-GB',
+            'https://itunes.apple.com/fr/rss/topfreeapplications/limit=100/json',
+            'https://itunes.apple.com/fr/rss/toppaidapplications/limit=100/json',
+            'https://rss.applemarketingtools.com/api/v2/fr/apps/top-free/100/apps.json',
+            'https://rss.applemarketingtools.com/api/v2/fr/apps/top-paid/100/apps.json',
+        ]);
 
-        await assert.rejects(featuredApps({
+        const failedRequests = [];
+        const failed = await featuredApps({
             country: 'de', platform: 'appletv', cachePath,
             client: {async get(url) {
                 failedRequests.push(url);
                 throw new Error('discover unavailable');
             }},
-        }), /discover unavailable/);
-        assert.deepEqual(failedRequests, ['https://apps.apple.com/de/tv/discover?l=en-GB']);
+        });
+        assert.deepEqual(failed.results, []);
+        assert.deepEqual(failedRequests, [
+            'https://apps.apple.com/de/tv/discover?l=en-GB',
+            'https://itunes.apple.com/de/rss/topfreeapplications/limit=100/json',
+            'https://itunes.apple.com/de/rss/toppaidapplications/limit=100/json',
+            'https://rss.applemarketingtools.com/api/v2/de/apps/top-free/100/apps.json',
+            'https://rss.applemarketingtools.com/api/v2/de/apps/top-paid/100/apps.json',
+        ]);
     } finally {
         await rm(directory, {recursive: true, force: true});
+    }
+});
+
+test('keeps Apple TV RSS fallback rankings isolated for Hong Kong and United States', async () => {
+    const countries = ['hk', 'us'];
+    for (const country of countries) {
+        const directory = await mkdtemp(join(tmpdir(), 'ipa-tvos-ranking-'));
+        const cachePath = join(directory, 'tv-ranking-cache.json');
+        const requests = [];
+        try {
+            const result = await featuredApps({
+                country, platform: 'appletv', cachePath,
+                client: featuredRSSFallbackClient(requests, country),
+            });
+            assert.equal(result.results.length, 2);
+            assert.equal(requests[0].url, `https://apps.apple.com/${country}/tv/discover?l=en-GB`);
+        } finally {
+            await rm(directory, {recursive: true, force: true});
+        }
     }
 });
 

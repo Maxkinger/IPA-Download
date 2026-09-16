@@ -414,7 +414,7 @@ async function searchApps(term, {country = 'cn', platform = 'iphone', limit = 30
     };
 }
 
-async function fetchRankedRSSApps(country, platform = 'iphone') {
+async function fetchRankedRSSApps(country, platform = 'iphone', client = catalogClient) {
     const cleanPlatform = normalizeAppPlatform(platform);
     const feedNames = cleanPlatform === 'ipad'
         ? ['topfreeipadapplications', 'toppaidipadapplications']
@@ -424,7 +424,7 @@ async function fetchRankedRSSApps(country, platform = 'iphone') {
         legacy: true,
     }));
     const feedResponses = await Promise.allSettled(
-        feeds.map(feed => catalogClient.get(feed.url).then(response => ({...response, legacy: feed.legacy})))
+        feeds.map(feed => client.get(feed.url).then(response => ({...response, legacy: feed.legacy})))
     );
     const apps = [];
     const seen = new Set();
@@ -447,7 +447,7 @@ async function fetchRankedRSSApps(country, platform = 'iphone') {
 
     const modernFeeds = ['top-free', 'top-paid'];
     const modernResponses = await Promise.allSettled(
-        modernFeeds.map(feed => catalogClient.get(`https://rss.applemarketingtools.com/api/v2/${country}/apps/${feed}/100/apps.json`))
+        modernFeeds.map(feed => client.get(`https://rss.applemarketingtools.com/api/v2/${country}/apps/${feed}/100/apps.json`))
     );
 
     for (const response of modernResponses) {
@@ -464,6 +464,12 @@ async function fetchRankedRSSApps(country, platform = 'iphone') {
     return apps;
 }
 
+async function fetchFeaturedAppleTVRSSFallback(country, client) {
+    const rankedApps = await fetchRankedRSSApps(country, 'iphone', client);
+    const ids = rankedApps.map(app => app.id).filter(Boolean);
+    return lookupAppsByIds(ids, {country, platform: 'appletv', client});
+}
+
 async function fetchFeaturedAppleTVApps(country, client, cachePath = defaultTVRankingCachePath()) {
     const cacheKey = tvRankingCacheKey(cachePath, country);
     const cached = tvRankingCache.get(cacheKey);
@@ -475,13 +481,21 @@ async function fetchFeaturedAppleTVApps(country, client, cachePath = defaultTVRa
         return restored.apps;
     }
 
-    const {data} = await client.get(buildTVDiscoverURL(country), {
-        headers: {
-            'Accept': 'text/html,application/xhtml+xml',
-        },
-    });
-    const ids = extractTVRankingAppIds(data, 200);
-    const apps = await lookupAppsByIds(ids, {country, platform: 'appletv', client});
+    let apps = [];
+    try {
+        const {data} = await client.get(buildTVDiscoverURL(country), {
+            headers: {
+                'Accept': 'text/html,application/xhtml+xml',
+            },
+        });
+        const ids = extractTVRankingAppIds(data, 200);
+        apps = await lookupAppsByIds(ids, {country, platform: 'appletv', client});
+    } catch {
+        // Apple has retired or redirected the public TV discover page in some storefronts.
+        // Continue with the public RSS fallback below instead of dropping the whole shelf.
+    }
+
+    if (!apps.length) apps = await fetchFeaturedAppleTVRSSFallback(country, client);
     if (!apps.length) return apps;
 
     if (tvRankingCache.size >= TV_RANKING_CACHE_MAX_COUNTRIES) {
